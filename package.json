@@ -1,0 +1,25 @@
+{
+	"private": true,
+	"name": "@gmitch215/mymcp",
+	"description": "Custom MCP servers from any API",
+	"scripts": {
+		"dev": "bunx wrangler dev --port 8787",
+		"deploy": "bunx wrangler publish",
+		"prettier": "prettier --write .",
+		"prettier:check": "prettier --check .",
+		"prepare": "husky install"
+	},
+	"devDependencies": {
+		"husky": "^9.1.7",
+		"lint-staged": "^16.2.4",
+		"prettier": "^3.6.2",
+		"wrangler": "^4.43.0"
+	},
+	"lint-staged": {
+		"*.{js,ts,json,md,yml}": "prettier --write"
+	},
+	"dependencies": {
+		"@cloudflare/workers-types": "^4.20251011.0",
+		"hono": "^4.10.1"
+	}
+}
