@@ -5,10 +5,6 @@ export interface MCPRequest {
 	tool?: string;
 	parameters: {
 		[paramName: string]: any;
-		options?: {
-			include_summary?: boolean;
-			format?: 'text' | 'json';
-		};
 	};
 }
 
@@ -38,26 +34,49 @@ export interface ToolsResponse extends MCPResponse {
 			};
 			required?: string[];
 		};
+		returns?: any;
 	}[];
 }
 
 // OpenAPI
 
 export interface OpenAPI {
+	openapi: string;
 	servers: {
 		url: string;
 	}[];
 	info: {
 		title: string;
 		description: string;
+		version?: string;
 		license?: {
 			name: string;
 			url: string;
 		};
 	};
+	security?: Array<Record<string, string[]>>;
 	components?: {
 		schemas?: {
 			[name: string]: OpenAPISchema;
+		};
+		responses?: {
+			[name: string]: {
+				description: string;
+				content?: {
+					[contentType: string]: {
+						schema: OpenAPISchema;
+					};
+				};
+			};
+		};
+		securitySchemes?: {
+			[name: string]: {
+				type: 'apiKey' | 'http' | 'oauth2' | 'openIdConnect';
+				name?: string;
+				in?: 'query' | 'header' | 'cookie';
+				scheme?: string;
+				bearerFormat?: string;
+			};
 		};
 	};
 	paths: {
@@ -77,14 +96,16 @@ export interface OpenAPI {
 					};
 				};
 				responses: {
-					[statusCode: string]: {
-						description: string;
-						content?: {
-							[contentType: string]: {
-								schema: OpenAPISchema;
-							};
-						};
-					};
+					[statusCode: string]:
+						| {
+								description: string;
+								content?: {
+									[contentType: string]: {
+										schema: OpenAPISchema;
+									};
+								};
+						  }
+						| { $ref: string };
 				};
 			};
 		};
@@ -103,43 +124,11 @@ export interface OpenAPIParameter {
 	schema: OpenAPISchema;
 }
 
-export type OpenAPIProperty =
-	| ((
-			| {
-					type: 'string';
-					enum?: string[];
-			  }
-			| {
-					type: 'number' | 'integer';
-					minimum?: number;
-					maximum?: number;
-			  }
-			| {
-					type: 'boolean';
-			  }
-			| {
-					type: 'array';
-					items: {
-						$ref?: string;
-						type?: OpenAPIType;
-					};
-			  }
-			| {
-					type: 'array';
-					items: Record<string, OpenAPISchema>;
-			  }
-			| { type: 'object'; properties?: Record<string, OpenAPISchema> }
-			| { type: 'null' }
-	  ) & { description?: string; nullable?: boolean; default?: any; example?: any })
-	| {
-			$ref: string;
-	  };
-
 export type OpenAPISchemaFull = (
 	| {
 			type: 'object';
 			properties?: {
-				[propName: string]: OpenAPIProperty;
+				[propName: string]: OpenAPISchema;
 			};
 			required?: string[];
 	  }
@@ -152,11 +141,57 @@ export type OpenAPISchemaFull = (
 
 export type OpenAPISchema = OpenAPISchemaFull | { $ref: string };
 
+export function findResponseSchema(
+	openapi: OpenAPI,
+	ref: string
+): Exclude<
+	NonNullable<OpenAPI['paths'][string][OpenAPIMethod]>['responses'][string],
+	{ $ref: string }
+> {
+	if (ref.startsWith('#/components/responses/')) {
+		const response = openapi.components!.responses![ref.replace('#/components/responses/', '')];
+		if (response.content) {
+			for (const [key, schemaObj] of Object.entries(response.content)) {
+				if ('$ref' in schemaObj.schema) {
+					response.content[key].schema = findSchema(openapi, schemaObj.schema);
+				}
+			}
+		}
+
+		return response;
+	}
+
+	throw new Error(`Unsupported $ref format: ${ref}`);
+}
+
 export function findSchema(openapi: OpenAPI, schema: OpenAPISchema): OpenAPISchemaFull {
 	if ('$ref' in schema) {
 		return openapi.components!.schemas![
 			schema.$ref.replace('#/components/schemas/', '')
 		] as OpenAPISchemaFull;
+	}
+
+	if (schema.type === 'object' && schema.properties) {
+		const resolvedProperties: Record<string, OpenAPISchema> = {};
+		for (const [propName, propSchema] of Object.entries(schema.properties)) {
+			if ('$ref' in propSchema) {
+				resolvedProperties[propName] = findSchema(openapi, propSchema);
+			} else {
+				resolvedProperties[propName] = propSchema;
+			}
+		}
+
+		return {
+			...schema,
+			properties: resolvedProperties
+		};
+	}
+
+	if (schema.type === 'array' && '$ref' in schema.items) {
+		return {
+			...schema,
+			items: findSchema(openapi, schema.items)
+		};
 	}
 
 	return schema;

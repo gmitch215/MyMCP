@@ -1,6 +1,7 @@
 {
 	"name": "mymcp",
 	"compatibility_date": "2025-04-28",
+	"main": "src/index.ts",
 	"routes": [
 		{
 			"pattern": "mymcp.gmitch215.xyz",
