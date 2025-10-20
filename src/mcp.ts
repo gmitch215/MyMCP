@@ -16,8 +16,16 @@ import { toMachineName, executeApiCall } from './util';
 import { upgradeWebSocket } from 'hono/cloudflare-workers';
 
 export function createMCP(host: string, openapi: OpenAPI) {
+	if (!host || typeof host !== 'string') {
+		throw new Error('Host must be a non-empty string');
+	}
+
+	if (!openapi || typeof openapi !== 'object') {
+		throw new Error('OpenAPI document must be a valid object');
+	}
+
 	const mcp = new Hono();
-	const id = toMachineName(openapi.info.title);
+	const id = toMachineName(openapi.info?.title || 'unknown');
 
 	const models = createModels(openapi);
 	const [tools, map, contentTypes] = createTools(openapi);
@@ -482,14 +490,20 @@ export function createMCP(host: string, openapi: OpenAPI) {
 }
 
 function createModels(openapi: OpenAPI): ModelsResponse {
+	if (!openapi?.info?.title || !openapi?.servers || !Array.isArray(openapi.servers)) {
+		throw new Error('Invalid OpenAPI document: missing required fields for model creation');
+	}
+
 	const id = toMachineName(openapi.info.title);
-	const items = openapi.servers.map((server) => ({
-		id: `api:${id}:${server.url}`,
-		name: `${openapi.info.title} (${server.url})`,
-		description: openapi.info.description,
-		capabilities: ['json', 'tools'],
-		tools_endpoint: `/tools/${id}`
-	}));
+	const items = openapi.servers
+		.filter((server) => server && server.url)
+		.map((server) => ({
+			id: `api:${id}:${server.url}`,
+			name: `${openapi.info.title} (${server.url})`,
+			description: openapi.info.description || '',
+			capabilities: ['json', 'tools'],
+			tools_endpoint: `/tools/${id}`
+		}));
 
 	return {
 		type: 'list',
@@ -506,16 +520,25 @@ function createTools(
 	const contentTypeMap: Record<string, string> = {};
 	const seenOperationIds = new Set<string>();
 
-	const items = Object.entries(openapi.paths).flatMap(([path, methods]) => {
+	const items = Object.entries(openapi.paths || {}).flatMap(([path, methods]) => {
+		if (!methods || typeof methods !== 'object') {
+			return [];
+		}
+
 		return Object.entries(methods).map(([method, details]) => {
 			if (!validMethods.includes(method.toLowerCase())) {
 				return null; // Skip invalid HTTP methods
 			}
 
+			if (!details || typeof details !== 'object') {
+				return null;
+			}
+
 			// Validate path parameters match the path
-			if (details.parameters) {
-				const pathParams = details.parameters.filter((p) => p.in === 'path');
+			if (details.parameters && Array.isArray(details.parameters)) {
+				const pathParams = details.parameters.filter((p) => p && p.in === 'path');
 				for (const param of pathParams) {
+					if (!param || !param.name) continue;
 					// Check if the path parameter is actually in the path
 					if (!path.includes(`{${param.name}}`) && !path.includes(`:${param.name}`)) {
 						return null; // Skip this invalid endpoint
@@ -538,22 +561,26 @@ function createTools(
 
 			// Determine content type
 			let contentType = 'application/json';
-			if (details.requestBody && 'content' in details.requestBody) {
-				const content = details.requestBody.content!;
-				contentType = Object.keys(content)[0] || 'application/json';
+			if (details.requestBody && 'content' in details.requestBody && details.requestBody.content) {
+				const content = details.requestBody.content;
+				const contentKeys = Object.keys(content);
+				contentType = contentKeys[0] || 'application/json';
 
-				if (content['application/json'] && content['application/json'].schema) {
+				if (content['application/json']?.schema) {
 					const schema = findSchema(openapi, content['application/json'].schema);
-					parameters['body'] = schema;
+					if (schema) parameters['body'] = schema;
 				}
 			}
 
 			contentTypeMap[operationId] = contentType;
 
-			if (details.parameters) {
+			if (details.parameters && Array.isArray(details.parameters)) {
 				for (const param of details.parameters) {
+					if (!param || !param.name || !param.schema) continue;
+
 					const name = `${param.in}-${param.name}`;
 					const schema = findSchema(openapi, param.schema);
+					if (!schema) continue;
 
 					parameters[name] = {
 						description: param.description || '',
@@ -565,11 +592,11 @@ function createTools(
 			const parameters0 =
 				Object.keys(parameters).length > 0
 					? {
-							type: 'object',
+							type: 'object' as const,
 							properties: parameters,
 							required: Object.keys(parameters).filter((name) => {
-								if (details.parameters) {
-									const param = details.parameters.find((p) => `${p.in}-${p.name}` === name);
+								if (details.parameters && Array.isArray(details.parameters)) {
+									const param = details.parameters.find((p) => p && `${p.in}-${p.name}` === name);
 									return param ? param.required : false;
 								}
 								if (name === 'body' && details.requestBody) {
@@ -583,43 +610,56 @@ function createTools(
 			toolMap[operationId] = `${method.toUpperCase()} ${path}`;
 
 			const returns =
-				'responses' in details
+				details.responses && typeof details.responses === 'object'
 					? {
 							oneOf: Object.values(details.responses)
+								.filter((response) => response != null)
 								.map((response) => {
 									if ('$ref' in response) {
-										const content = findResponseSchema(openapi, response.$ref);
-										if (content.content) {
-											const schemas: OpenAPISchema[] = [];
-											for (const contentType in content.content) {
-												const contentItem = content.content[contentType];
-												if (contentItem.schema) {
-													schemas.push({
-														description: content.description,
-														...findSchema(openapi, contentItem.schema)
-													});
+										try {
+											const content = findResponseSchema(openapi, response.$ref);
+											if (content?.content) {
+												const schemas: OpenAPISchema[] = [];
+												for (const contentType in content.content) {
+													const contentItem = content.content[contentType];
+													if (contentItem?.schema) {
+														const resolvedSchema = findSchema(openapi, contentItem.schema);
+														if (resolvedSchema) {
+															schemas.push({
+																description: content.description,
+																...resolvedSchema
+															});
+														}
+													}
 												}
-											}
 
-											return schemas.length > 0 ? schemas : [{ type: 'null' }];
+												return schemas.length > 0 ? schemas : [{ type: 'null' as const }];
+											}
+										} catch (error) {
+											console.error(`Error resolving response schema: ${error}`);
 										}
 
-										return [{ type: 'null' }];
+										return [{ type: 'null' as const }];
 									}
 
 									const schemas: OpenAPISchema[] = [];
 
-									for (const contentType in response.content) {
-										const content = response.content[contentType];
-										if (content.schema) {
-											schemas.push({
-												description: response.description,
-												...findSchema(openapi, content.schema)
-											});
+									if (response.content) {
+										for (const contentType in response.content) {
+											const content = response.content[contentType];
+											if (content?.schema) {
+												const resolvedSchema = findSchema(openapi, content.schema);
+												if (resolvedSchema) {
+													schemas.push({
+														description: response.description || '',
+														...resolvedSchema
+													});
+												}
+											}
 										}
 									}
 
-									return schemas.length > 0 ? schemas : [{ type: 'null' }];
+									return schemas.length > 0 ? schemas : [{ type: 'null' as const }];
 								})
 								.flat()
 						}
@@ -646,21 +686,31 @@ function createTools(
 }
 
 function createPrompts(tools: ToolsResponse): PromptsResponse {
+	if (!tools || !Array.isArray(tools.items)) {
+		return {
+			type: 'list',
+			items: []
+		};
+	}
+
 	const items: Prompt[] = tools.items
-		.filter((tool) => tool.name) // Only tools with summaries
+		.filter((tool) => tool && tool.name && tool.id) // Only tools with summaries and IDs
 		.map((tool) => ({
 			name: tool.id,
-			description: tool.description || tool.name,
-			arguments: tool.parameters?.properties
-				? Object.entries(tool.parameters.properties).map(([key, schema]) => {
-						const desc = '$ref' in schema ? '' : schema.description || '';
-						return {
-							name: key,
-							description: desc,
-							required: tool.parameters?.required?.includes(key) || false
-						};
-					})
-				: undefined
+			description: tool.description || tool.name || '',
+			arguments:
+				tool.parameters?.properties && typeof tool.parameters.properties === 'object'
+					? Object.entries(tool.parameters.properties)
+							.filter(([key, schema]) => key && schema)
+							.map(([key, schema]) => {
+								const desc = schema && '$ref' in schema ? '' : schema?.description || '';
+								return {
+									name: key,
+									description: desc,
+									required: tool.parameters?.required?.includes(key) || false
+								};
+							})
+					: undefined
 		}));
 
 	return {

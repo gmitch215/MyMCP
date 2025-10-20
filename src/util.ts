@@ -1,4 +1,4 @@
-import { OpenAPI, MCPRequest } from './types';
+import { OpenAPI, MCPRequest, isValidOpenAPI } from './types';
 
 export function toMachineName(name: string): string {
 	return name
@@ -8,6 +8,15 @@ export function toMachineName(name: string): string {
 }
 
 export function processParameters(parameters: Record<string, any>) {
+	if (!parameters || typeof parameters !== 'object') {
+		return {
+			body: null,
+			queryParameters: new URLSearchParams(),
+			pathParameters: new Map<string, string>(),
+			headers: new Map<string, string>()
+		};
+	}
+
 	let body: any = null;
 	const parametersCopy = { ...parameters };
 
@@ -21,26 +30,41 @@ export function processParameters(parameters: Record<string, any>) {
 	const headers = new Map<string, string>();
 
 	for (const [key, value] of Object.entries(parametersCopy)) {
+		if (!key || value === undefined || value === null) continue;
+
 		if (key.startsWith('query-')) {
 			const paramName = key.substring(6);
+			if (!paramName) continue;
 			// Handle array values for repeated query parameters
 			if (Array.isArray(value)) {
-				value.forEach((v) => queryParameters.append(paramName, String(v)));
+				value.forEach((v) => {
+					if (v !== undefined && v !== null) {
+						queryParameters.append(paramName, String(v));
+					}
+				});
 			} else {
 				queryParameters.append(paramName, String(value));
 			}
 		} else if (key.startsWith('path-')) {
-			pathParameters.set(key.substring(5), String(value));
+			const paramName = key.substring(5);
+			if (paramName) {
+				pathParameters.set(paramName, String(value));
+			}
 		} else if (key.startsWith('header-')) {
-			headers.set(key.substring(7), String(value));
+			const headerName = key.substring(7);
+			if (headerName) {
+				headers.set(headerName, String(value));
+			}
 		} else if (key.startsWith('cookie-')) {
 			// Add cookies to headers
 			const cookieName = key.substring(7);
-			const existingCookie = headers.get('Cookie');
-			headers.set(
-				'Cookie',
-				existingCookie ? `${existingCookie}; ${cookieName}=${value}` : `${cookieName}=${value}`
-			);
+			if (cookieName) {
+				const existingCookie = headers.get('Cookie');
+				headers.set(
+					'Cookie',
+					existingCookie ? `${existingCookie}; ${cookieName}=${value}` : `${cookieName}=${value}`
+				);
+			}
 		}
 	}
 
@@ -53,7 +77,16 @@ export function buildApiUrl(
 	pathParameters: Map<string, string>,
 	queryParameters: URLSearchParams
 ): string {
+	if (!host || typeof host !== 'string') {
+		throw new Error('Host must be a non-empty string');
+	}
+
+	if (!path || typeof path !== 'string') {
+		throw new Error('Path must be a non-empty string');
+	}
+
 	const processedPath = Array.from(pathParameters.entries()).reduce((prev, [key, value]) => {
+		if (!key) return prev;
 		return prev
 			.replace(`{${key}}`, encodeURIComponent(value))
 			.replace(`:${key}`, encodeURIComponent(value));
@@ -63,9 +96,8 @@ export function buildApiUrl(
 		? `${host}${processedPath}`
 		: `https://${host}${processedPath}`;
 
-	return queryParameters.toString().length > 0
-		? `${baseUrl}?${queryParameters.toString()}`
-		: baseUrl;
+	const queryString = queryParameters.toString();
+	return queryString.length > 0 ? `${baseUrl}?${queryString}` : baseUrl;
 }
 
 export async function executeApiCall(
@@ -76,7 +108,19 @@ export async function executeApiCall(
 	contentType: string = 'application/json',
 	securitySchemes?: Record<string, any>
 ): Promise<any> {
-	const { body, queryParameters, pathParameters, headers } = processParameters(parameters);
+	if (!host || typeof host !== 'string') {
+		throw new Error('Host must be a non-empty string');
+	}
+
+	if (!method || typeof method !== 'string') {
+		throw new Error('Method must be a non-empty string');
+	}
+
+	if (!path || typeof path !== 'string') {
+		throw new Error('Path must be a non-empty string');
+	}
+
+	const { body, queryParameters, pathParameters, headers } = processParameters(parameters || {});
 	const url = buildApiUrl(host, path, pathParameters, queryParameters);
 
 	console.log(`[API Call] ${method} ${url}`);
@@ -88,20 +132,24 @@ export async function executeApiCall(
 
 	// Add custom headers
 	headers.forEach((value, key) => {
-		requestHeaders[key] = value;
+		if (key && value) {
+			requestHeaders[key] = value;
+		}
 	});
 
 	// Handle authentication
-	if (securitySchemes) {
+	if (securitySchemes && typeof securitySchemes === 'object') {
 		for (const [, scheme] of Object.entries(securitySchemes)) {
+			if (!scheme || typeof scheme !== 'object') continue;
+
 			if (scheme.type === 'apiKey' && scheme.in === 'header' && scheme.name) {
 				// API key would be passed as a parameter
 				const apiKeyParam = `header-${scheme.name}`;
-				if (parameters[apiKeyParam]) {
+				if (parameters && parameters[apiKeyParam]) {
 					requestHeaders[scheme.name] = String(parameters[apiKeyParam]);
 				}
 			} else if (scheme.type === 'http' && scheme.scheme === 'bearer') {
-				if (parameters['authorization'] || parameters['header-Authorization']) {
+				if (parameters && (parameters['authorization'] || parameters['header-Authorization'])) {
 					requestHeaders['Authorization'] = String(
 						parameters['authorization'] || parameters['header-Authorization']
 					);
@@ -139,6 +187,10 @@ export async function executeApiCall(
 }
 
 export async function fetchOpenAPI(server: string): Promise<OpenAPI> {
+	if (!server || typeof server !== 'string') {
+		throw new Error('Server URL must be a non-empty string');
+	}
+
 	const cache = await caches.open('openapi-cache');
 	const cacheKey = new Request(server);
 
@@ -147,7 +199,9 @@ export async function fetchOpenAPI(server: string): Promise<OpenAPI> {
 	if (!response) {
 		response = await fetch(server);
 		if (!response.ok) {
-			throw new Error(`Failed to fetch OpenAPI document: ${response.status}`);
+			throw new Error(
+				`Failed to fetch OpenAPI document: ${response.status} ${response.statusText}`
+			);
 		}
 
 		const responseToCache = response.clone();
@@ -162,5 +216,14 @@ export async function fetchOpenAPI(server: string): Promise<OpenAPI> {
 		await cache.put(cacheKey, cachedResponse);
 	}
 
-	return response.json<OpenAPI>();
+	const json = await response.json();
+
+	// Validate the parsed JSON conforms to OpenAPI structure
+	if (!isValidOpenAPI(json)) {
+		throw new Error(
+			'Invalid OpenAPI document: missing required fields (openapi, servers, info.title, info.description, or paths)'
+		);
+	}
+
+	return json;
 }

@@ -182,6 +182,53 @@ export type OpenAPISchemaFull = (
 export type OpenAPISchema = OpenAPISchemaFull | { $ref: string };
 
 /**
+ * Validates that a parsed JSON object conforms to the OpenAPI interface
+ * @param obj The object to validate
+ * @returns true if valid, false otherwise
+ */
+export function isValidOpenAPI(obj: any): obj is OpenAPI {
+	if (!obj || typeof obj !== 'object') {
+		return false;
+	}
+
+	// Check required fields
+	if (typeof obj.openapi !== 'string' || !obj.openapi) {
+		return false;
+	}
+
+	if (!Array.isArray(obj.servers) || obj.servers.length === 0) {
+		return false;
+	}
+
+	// Validate servers array
+	for (const server of obj.servers) {
+		if (!server || typeof server !== 'object' || typeof server.url !== 'string') {
+			return false;
+		}
+	}
+
+	// Validate info object
+	if (!obj.info || typeof obj.info !== 'object') {
+		return false;
+	}
+
+	if (typeof obj.info.title !== 'string' || !obj.info.title) {
+		return false;
+	}
+
+	if (typeof obj.info.description !== 'string' || !obj.info.description) {
+		return false;
+	}
+
+	// Validate paths object
+	if (!obj.paths || typeof obj.paths !== 'object') {
+		return false;
+	}
+
+	return true;
+}
+
+/**
  * Helper function to resolve $defs references with ambiguity detection
  * Supports:
  * - Local: #/$defs/DefName within the current schema context
@@ -190,6 +237,10 @@ export type OpenAPISchema = OpenAPISchemaFull | { $ref: string };
  * - Bare search: #/$defs/DefName (searches all component schemas if not in root)
  */
 function resolveDefsReference(openapi: OpenAPI, ref: string, localSchema?: any): any | null {
+	if (!openapi || !ref || typeof ref !== 'string') {
+		return null;
+	}
+
 	const comps = openapi.components?.schemas || {};
 
 	if (ref.startsWith('#/components/schemas/')) {
@@ -201,11 +252,10 @@ function resolveDefsReference(openapi: OpenAPI, ref: string, localSchema?: any):
 			if (schema && typeof schema === 'object' && '$defs' in schema) {
 				let cur: any = (schema as any).$defs;
 				for (const part of defPath.split('/')) {
-					if (cur && part in cur) {
-						cur = cur[part];
-					} else {
+					if (!cur || !part || !(part in cur)) {
 						return null;
 					}
+					cur = cur[part];
 				}
 				return cur;
 			}
@@ -220,12 +270,11 @@ function resolveDefsReference(openapi: OpenAPI, ref: string, localSchema?: any):
 			let cur: any = localSchema.$defs;
 			let matched = true;
 			for (const part of defPath) {
-				if (cur && part in cur) {
-					cur = cur[part];
-				} else {
+				if (!cur || !part || !(part in cur)) {
 					matched = false;
 					break;
 				}
+				cur = cur[part];
 			}
 			if (matched && cur) {
 				return cur;
@@ -237,12 +286,11 @@ function resolveDefsReference(openapi: OpenAPI, ref: string, localSchema?: any):
 			let cur: any = openapiAny.$defs;
 			let matched = true;
 			for (const part of defPath) {
-				if (cur && part in cur) {
-					cur = cur[part];
-				} else {
+				if (!cur || !part || !(part in cur)) {
 					matched = false;
 					break;
 				}
+				cur = cur[part];
 			}
 			if (matched && cur) {
 				return cur;
@@ -258,12 +306,11 @@ function resolveDefsReference(openapi: OpenAPI, ref: string, localSchema?: any):
 			let cur: any = node.$defs;
 			let matched = true;
 			for (const part of defPath) {
-				if (cur && part in cur) {
-					cur = cur[part];
-				} else {
+				if (!cur || !part || !(part in cur)) {
 					matched = false;
 					break;
 				}
+				cur = cur[part];
 			}
 			if (matched && cur) {
 				matches.push({ schemaName, def: cur });
@@ -294,12 +341,26 @@ export function findResponseSchema(
 	NonNullable<OpenAPI['paths'][string][OpenAPIMethod]>['responses'][string],
 	{ $ref: string }
 > {
+	if (!openapi || !ref || typeof ref !== 'string') {
+		throw new Error('Invalid parameters for findResponseSchema');
+	}
+
 	if (ref.startsWith('#/components/responses/')) {
-		const response = openapi.components!.responses![ref.replace('#/components/responses/', '')];
+		const responseName = ref.replace('#/components/responses/', '');
+		const response = openapi.components?.responses?.[responseName];
+
+		if (!response) {
+			throw new Error(`Response not found: ${ref}`);
+		}
+
 		if (response.content) {
 			for (const [key, schemaObj] of Object.entries(response.content)) {
+				if (!key || !schemaObj?.schema) continue;
+
 				if ('$ref' in schemaObj.schema) {
-					response.content[key].schema = findSchema(openapi, schemaObj.schema);
+					const res = findSchema(openapi, schemaObj.schema);
+					if (!res) continue;
+					response.content[key].schema = res;
 				}
 			}
 		}
@@ -320,16 +381,26 @@ export function findSchema(
 	openapi: OpenAPI,
 	schema: OpenAPISchema,
 	rootSchema?: any
-): OpenAPISchemaFull {
+): OpenAPISchemaFull | null {
+	if (!openapi || !schema) return null;
+
 	const contextSchema =
 		rootSchema || (schema && typeof schema === 'object' && '$defs' in schema ? schema : undefined);
 
 	if ('$ref' in schema) {
 		const ref = schema.$ref;
 
+		if (!ref || typeof ref !== 'string') {
+			return null;
+		}
+
 		if (ref.startsWith('#/components/schemas/') && !ref.includes('/$defs/')) {
 			const schemaName = ref.replace('#/components/schemas/', '');
-			return openapi.components!.schemas![schemaName] as OpenAPISchemaFull;
+			const foundSchema = openapi.components?.schemas?.[schemaName];
+			if (!foundSchema) {
+				return null;
+			}
+			return foundSchema as OpenAPISchemaFull;
 		}
 
 		const defsResult = resolveDefsReference(openapi, ref, contextSchema);
@@ -347,8 +418,13 @@ export function findSchema(
 	if (schema.type === 'object' && schema.properties) {
 		const resolvedProperties: Record<string, OpenAPISchema> = {};
 		for (const [propName, propSchema] of Object.entries(schema.properties)) {
+			if (!propName || !propSchema) continue;
+
 			if ('$ref' in propSchema) {
-				resolvedProperties[propName] = findSchema(openapi, propSchema, contextSchema);
+				const res = findSchema(openapi, propSchema, contextSchema);
+				if (!res) continue;
+
+				resolvedProperties[propName] = res;
 			} else {
 				resolvedProperties[propName] = propSchema;
 			}
@@ -360,11 +436,14 @@ export function findSchema(
 		};
 	}
 
-	if (schema.type === 'array' && '$ref' in schema.items) {
-		return {
-			...schema,
-			items: findSchema(openapi, schema.items, contextSchema)
-		};
+	if (schema.type === 'array' && schema.items) {
+		if ('$ref' in schema.items) {
+			const resolvedItems = findSchema(openapi, schema.items, contextSchema);
+			return {
+				...schema,
+				items: resolvedItems || { type: 'null' }
+			};
+		}
 	}
 
 	return schema;
