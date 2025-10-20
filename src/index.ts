@@ -51,9 +51,6 @@ const serverHandler = async (c: any) => {
 	}
 
 	try {
-		// Parse hostname more robustly
-		const url = new URL(serverUrl);
-		const hostname = url.hostname + url.pathname + url.search;
 		const openapi = await fetchOpenAPI(serverUrl);
 
 		// Validate OpenAPI structure
@@ -61,6 +58,25 @@ const serverHandler = async (c: any) => {
 			metrics.errors++;
 			console.error(`[Invalid OpenAPI] Document missing required fields: ${serverUrl}`);
 			return c.json({ error: 'Invalid OpenAPI document', serverUrl }, 400);
+		}
+
+		// Extract hostname from the OpenAPI servers field
+		const apiServerUrl = openapi.servers?.[0]?.url;
+		if (!apiServerUrl) {
+			metrics.errors++;
+			console.error(`[Invalid OpenAPI] No server URL found in document: ${serverUrl}`);
+			return c.json({ error: 'No server URL in OpenAPI document', serverUrl }, 400);
+		}
+
+		// Handle relative vs absolute server URLs
+		let hostname: string;
+		if (apiServerUrl.startsWith('http://') || apiServerUrl.startsWith('https://')) {
+			// Absolute URL - use as-is
+			hostname = apiServerUrl;
+		} else {
+			// Relative URL - construct full URL from the OpenAPI document's origin
+			const docUrl = new URL(serverUrl);
+			hostname = `${docUrl.protocol}//${docUrl.host}${apiServerUrl}`;
 		}
 
 		const mcp = createMCP(hostname, openapi);

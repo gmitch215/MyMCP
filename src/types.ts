@@ -38,6 +38,46 @@ export interface ToolsResponse extends MCPResponse {
 	}[];
 }
 
+export interface Prompt {
+	name: string;
+	description?: string;
+	arguments?: {
+		name: string;
+		description?: string;
+		required?: boolean;
+	}[];
+}
+
+export interface PromptsResponse extends MCPResponse {
+	items: Prompt[];
+}
+
+// JSON-RPC 2.0 types
+export interface JsonRpcRequest {
+	jsonrpc: '2.0';
+	id?: string | number;
+	method: string;
+	params?: any;
+}
+
+export interface JsonRpcResponse {
+	jsonrpc: '2.0';
+	id: string | number | null;
+	result?: any;
+	error?: {
+		code: number;
+		message: string;
+		data?: any;
+	};
+	method?: string;
+}
+
+export interface JsonRpcNotification {
+	jsonrpc: '2.0';
+	method: string;
+	params?: any;
+}
+
 // OpenAPI
 
 export interface OpenAPI {
@@ -141,6 +181,112 @@ export type OpenAPISchemaFull = (
 
 export type OpenAPISchema = OpenAPISchemaFull | { $ref: string };
 
+/**
+ * Helper function to resolve $defs references with ambiguity detection
+ * Supports:
+ * - Local: #/$defs/DefName within the current schema context
+ * - Root-level: #/$defs/DefName (OpenAPI 3.1 root $defs)
+ * - Exact: #/components/schemas/SchemaName/$defs/DefName
+ * - Bare search: #/$defs/DefName (searches all component schemas if not in root)
+ */
+function resolveDefsReference(openapi: OpenAPI, ref: string, localSchema?: any): any | null {
+	const comps = openapi.components?.schemas || {};
+
+	if (ref.startsWith('#/components/schemas/')) {
+		const remainder = ref.replace('#/components/schemas/', '');
+		const schemaMatch = remainder.match(/^([^/]+)\/\$defs\/(.+)$/);
+		if (schemaMatch) {
+			const [, schemaName, defPath] = schemaMatch;
+			const schema = comps[schemaName];
+			if (schema && typeof schema === 'object' && '$defs' in schema) {
+				let cur: any = (schema as any).$defs;
+				for (const part of defPath.split('/')) {
+					if (cur && part in cur) {
+						cur = cur[part];
+					} else {
+						return null;
+					}
+				}
+				return cur;
+			}
+		}
+	}
+
+	if (ref.startsWith('#/$defs/')) {
+		const defPath = ref.replace('#/$defs/', '').split('/');
+
+		// First, check local schema context (same schema that contains the $ref)
+		if (localSchema && typeof localSchema === 'object' && localSchema.$defs) {
+			let cur: any = localSchema.$defs;
+			let matched = true;
+			for (const part of defPath) {
+				if (cur && part in cur) {
+					cur = cur[part];
+				} else {
+					matched = false;
+					break;
+				}
+			}
+			if (matched && cur) {
+				return cur;
+			}
+		}
+
+		const openapiAny = openapi as any;
+		if (openapiAny.$defs) {
+			let cur: any = openapiAny.$defs;
+			let matched = true;
+			for (const part of defPath) {
+				if (cur && part in cur) {
+					cur = cur[part];
+				} else {
+					matched = false;
+					break;
+				}
+			}
+			if (matched && cur) {
+				return cur;
+			}
+		}
+
+		// If not found at root, search component schemas
+		const matches: Array<{ schemaName: string; def: any }> = [];
+		for (const schemaName of Object.keys(comps)) {
+			const node: any = comps[schemaName];
+			if (!node || typeof node !== 'object' || !node.$defs) continue;
+
+			let cur: any = node.$defs;
+			let matched = true;
+			for (const part of defPath) {
+				if (cur && part in cur) {
+					cur = cur[part];
+				} else {
+					matched = false;
+					break;
+				}
+			}
+			if (matched && cur) {
+				matches.push({ schemaName, def: cur });
+			}
+		}
+
+		if (matches.length === 0) {
+			return null;
+		}
+
+		if (matches.length > 1) {
+			const schemaNames = matches.map((m) => m.schemaName).join(', ');
+			console.warn(
+				`Ambiguous $defs reference "${ref}" found in multiple schemas: ${schemaNames}. Using first match from "${matches[0].schemaName}". Consider using explicit reference: #/components/schemas/${matches[0].schemaName}/$defs/${defPath.join('/')}`
+			);
+		}
+
+		return matches[0].def;
+	}
+
+	return null;
+}
+
 export function findResponseSchema(
 	openapi: OpenAPI,
 	ref: string
@@ -161,21 +307,48 @@ export function findResponseSchema(
 		return response;
 	}
 
+	// Try resolving as a $defs reference
+	const defsResult = resolveDefsReference(openapi, ref);
+	if (defsResult) {
+		return defsResult as any;
+	}
+
 	throw new Error(`Unsupported $ref format: ${ref}`);
 }
 
-export function findSchema(openapi: OpenAPI, schema: OpenAPISchema): OpenAPISchemaFull {
+export function findSchema(
+	openapi: OpenAPI,
+	schema: OpenAPISchema,
+	rootSchema?: any
+): OpenAPISchemaFull {
+	const contextSchema =
+		rootSchema || (schema && typeof schema === 'object' && '$defs' in schema ? schema : undefined);
+
 	if ('$ref' in schema) {
-		return openapi.components!.schemas![
-			schema.$ref.replace('#/components/schemas/', '')
-		] as OpenAPISchemaFull;
+		const ref = schema.$ref;
+
+		if (ref.startsWith('#/components/schemas/') && !ref.includes('/$defs/')) {
+			const schemaName = ref.replace('#/components/schemas/', '');
+			return openapi.components!.schemas![schemaName] as OpenAPISchemaFull;
+		}
+
+		const defsResult = resolveDefsReference(openapi, ref, contextSchema);
+		if (defsResult) {
+			if (defsResult.$ref) {
+				return findSchema(openapi, defsResult, contextSchema);
+			}
+
+			return defsResult as OpenAPISchemaFull;
+		}
+
+		throw new Error(`Unsupported $ref format: ${ref}`);
 	}
 
 	if (schema.type === 'object' && schema.properties) {
 		const resolvedProperties: Record<string, OpenAPISchema> = {};
 		for (const [propName, propSchema] of Object.entries(schema.properties)) {
 			if ('$ref' in propSchema) {
-				resolvedProperties[propName] = findSchema(openapi, propSchema);
+				resolvedProperties[propName] = findSchema(openapi, propSchema, contextSchema);
 			} else {
 				resolvedProperties[propName] = propSchema;
 			}
@@ -190,7 +363,7 @@ export function findSchema(openapi: OpenAPI, schema: OpenAPISchema): OpenAPISche
 	if (schema.type === 'array' && '$ref' in schema.items) {
 		return {
 			...schema,
-			items: findSchema(openapi, schema.items)
+			items: findSchema(openapi, schema.items, contextSchema)
 		};
 	}
 

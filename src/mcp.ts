@@ -2,39 +2,18 @@ import { Hono } from 'hono';
 import {
 	findResponseSchema,
 	findSchema,
+	JsonRpcRequest,
+	JsonRpcResponse,
 	MCPRequest,
 	ModelsResponse,
 	OpenAPI,
 	OpenAPISchema,
+	Prompt,
+	PromptsResponse,
 	ToolsResponse
 } from './types';
-import { toMachineName, normalizeServerPath, executeApiCall } from './util';
+import { toMachineName, executeApiCall } from './util';
 import { upgradeWebSocket } from 'hono/cloudflare-workers';
-
-// JSON-RPC 2.0 types
-interface JsonRpcRequest {
-	jsonrpc: '2.0';
-	id?: string | number;
-	method: string;
-	params?: any;
-}
-
-interface JsonRpcResponse {
-	jsonrpc: '2.0';
-	id: string | number | null;
-	result?: any;
-	error?: {
-		code: number;
-		message: string;
-		data?: any;
-	};
-}
-
-interface JsonRpcNotification {
-	jsonrpc: '2.0';
-	method: string;
-	params?: any;
-}
 
 export function createMCP(host: string, openapi: OpenAPI) {
 	const mcp = new Hono();
@@ -42,17 +21,15 @@ export function createMCP(host: string, openapi: OpenAPI) {
 
 	const models = createModels(openapi);
 	const [tools, map, contentTypes] = createTools(openapi);
+	const prompts = createPrompts(tools);
 
 	// MCP over SSE endpoint - simplified approach
 	// The client connects here and the server responds via SSE
 	// Client sends messages via POST to /sse (with message in body)
 	mcp.all('/sse', async (c) => {
-		// Handle POST requests with JSON-RPC messages
 		if (c.req.method === 'POST') {
 			try {
 				const request = await c.req.json<JsonRpcRequest>();
-
-				// Handle different JSON-RPC methods
 				switch (request.method) {
 					case 'initialize': {
 						const response: JsonRpcResponse = {
@@ -73,7 +50,6 @@ export function createMCP(host: string, openapi: OpenAPI) {
 						};
 						return c.json(response);
 					}
-
 					case 'tools/list': {
 						const mcpTools = tools.items.map((tool) => ({
 							name: tool.id,
@@ -93,7 +69,6 @@ export function createMCP(host: string, openapi: OpenAPI) {
 						};
 						return c.json(response);
 					}
-
 					case 'tools/call': {
 						const { name: toolName, arguments: args } = request.params || {};
 
@@ -103,20 +78,19 @@ export function createMCP(host: string, openapi: OpenAPI) {
 								id: request.id!,
 								error: {
 									code: -32602,
-									message: 'Tool not found'
+									message: 'Invalid params',
+									data: 'Tool not found'
 								}
 							};
-							return c.json(response, 404);
+							return c.json(response);
 						}
 
 						const [method, path] = map[toolName].split(' ');
 						const model = models.items[0];
-						const serverPath = normalizeServerPath(model.id);
 
 						try {
 							const output = await executeApiCall(
 								host,
-								serverPath,
 								method,
 								path,
 								args || {},
@@ -133,24 +107,30 @@ export function createMCP(host: string, openapi: OpenAPI) {
 											type: 'text',
 											text: typeof output === 'string' ? output : JSON.stringify(output, null, 2)
 										}
-									]
+									],
+									isError: false
 								}
 							};
 							return c.json(response);
 						} catch (error) {
+							// Return tool error as a successful response with isError flag
+							const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 							const response: JsonRpcResponse = {
 								jsonrpc: '2.0',
 								id: request.id!,
-								error: {
-									code: -32603,
-									message: 'Internal error',
-									data: error instanceof Error ? error.message : 'Unknown error'
+								result: {
+									content: [
+										{
+											type: 'text',
+											text: `Error calling tool: ${errorMessage}`
+										}
+									],
+									isError: true
 								}
 							};
-							return c.json(response, 500);
+							return c.json(response);
 						}
 					}
-
 					case 'resources/list': {
 						const response: JsonRpcResponse = {
 							jsonrpc: '2.0',
@@ -161,23 +141,39 @@ export function createMCP(host: string, openapi: OpenAPI) {
 						};
 						return c.json(response);
 					}
-
+					case 'resources/templates/list': {
+						const response: JsonRpcResponse = {
+							jsonrpc: '2.0',
+							id: request.id!,
+							result: {
+								resourceTemplates: []
+							}
+						};
+						return c.json(response);
+					}
 					case 'prompts/list': {
 						const response: JsonRpcResponse = {
 							jsonrpc: '2.0',
 							id: request.id!,
 							result: {
-								prompts: []
+								prompts: prompts.items
 							}
 						};
 						return c.json(response);
 					}
-
 					case 'notifications/initialized': {
 						// Client notification that it has initialized - no response needed
 						return c.body(null, 204);
 					}
+					case 'ping': {
+						const response: JsonRpcResponse = {
+							jsonrpc: '2.0',
+							id: request.id!,
+							result: {}
+						};
 
+						return c.json(response);
+					}
 					default: {
 						const response: JsonRpcResponse = {
 							jsonrpc: '2.0',
@@ -203,22 +199,24 @@ export function createMCP(host: string, openapi: OpenAPI) {
 			}
 		}
 
-		// Handle GET request - return SSE stream
-		return new Response(
-			new ReadableStream({
-				start(controller) {
-					// SSE streams don't close, they stay open
-					// Some clients might not need this at all for HTTP transport
-				}
-			}),
-			{
-				headers: {
-					'Content-Type': 'text/event-stream',
-					'Cache-Control': 'no-cache',
-					Connection: 'keep-alive'
-				}
-			}
-		);
+		// Handle GET request - return endpoint information
+		return c.json({
+			type: 'mcp_endpoint',
+			transport: 'http',
+			protocol: 'MCP',
+			version: '2024-11-05',
+			description: 'Model Context Protocol endpoint. Send JSON-RPC 2.0 requests via POST.',
+			methods: [
+				'initialize',
+				'tools/list',
+				'tools/call',
+				'resources/list',
+				'resources/templates/list',
+				'prompts/list',
+				'notifications/initialized',
+				'ping'
+			]
+		});
 	});
 
 	// Legacy endpoints for backwards compatibility
@@ -277,12 +275,10 @@ export function createMCP(host: string, openapi: OpenAPI) {
 		}
 
 		const [method, path] = map[tool].split(' ');
-		const serverPath = normalizeServerPath(server.id);
 
 		try {
 			const output = await executeApiCall(
 				host,
-				serverPath,
 				method,
 				path,
 				parameters,
@@ -296,7 +292,6 @@ export function createMCP(host: string, openapi: OpenAPI) {
 				output
 			});
 		} catch (error) {
-			console.error('API call error:', error);
 			return c.json(
 				{
 					error: 'API call failed',
@@ -398,7 +393,6 @@ export function createMCP(host: string, openapi: OpenAPI) {
 					);
 
 					const [method, path] = map[tool].split(' ');
-					const serverPath = normalizeServerPath(server.id);
 
 					// Send progress update
 					ws.send(
@@ -411,7 +405,6 @@ export function createMCP(host: string, openapi: OpenAPI) {
 
 					executeApiCall(
 						host,
-						serverPath,
 						method,
 						path,
 						parameters,
@@ -475,10 +468,10 @@ export function createMCP(host: string, openapi: OpenAPI) {
 						// Ignore malformed messages
 					}
 				},
-				onClose(ws: any) {
+				onClose() {
 					console.log(`Stream closed for ${id}`);
 				},
-				onError(ws: any, err: any) {
+				onError(err: any) {
 					console.error('Stream error:', err);
 				}
 			};
@@ -511,6 +504,7 @@ function createTools(
 ): [ToolsResponse, Record<string, string>, Record<string, string>] {
 	const toolMap: Record<string, string> = {};
 	const contentTypeMap: Record<string, string> = {};
+	const seenOperationIds = new Set<string>();
 
 	const items = Object.entries(openapi.paths).flatMap(([path, methods]) => {
 		return Object.entries(methods).map(([method, details]) => {
@@ -518,10 +512,27 @@ function createTools(
 				return null; // Skip invalid HTTP methods
 			}
 
-			// Generate fallback operationId if missing
+			// Validate path parameters match the path
+			if (details.parameters) {
+				const pathParams = details.parameters.filter((p) => p.in === 'path');
+				for (const param of pathParams) {
+					// Check if the path parameter is actually in the path
+					if (!path.includes(`{${param.name}}`) && !path.includes(`:${param.name}`)) {
+						return null; // Skip this invalid endpoint
+					}
+				}
+			}
+
 			const operationId =
 				details.operationId ||
 				`${method}_${path.replace(/[^a-z0-9]/gi, '_').replace(/^_+|_+$/g, '')}`;
+
+			// Check for duplicate operationIds
+			if (seenOperationIds.has(operationId)) {
+				return null;
+			}
+
+			seenOperationIds.add(operationId);
 
 			let parameters: Record<string, OpenAPISchema> = {};
 
@@ -632,4 +643,28 @@ function createTools(
 		toolMap,
 		contentTypeMap
 	];
+}
+
+function createPrompts(tools: ToolsResponse): PromptsResponse {
+	const items: Prompt[] = tools.items
+		.filter((tool) => tool.name) // Only tools with summaries
+		.map((tool) => ({
+			name: tool.id,
+			description: tool.description || tool.name,
+			arguments: tool.parameters?.properties
+				? Object.entries(tool.parameters.properties).map(([key, schema]) => {
+						const desc = '$ref' in schema ? '' : schema.description || '';
+						return {
+							name: key,
+							description: desc,
+							required: tool.parameters?.required?.includes(key) || false
+						};
+					})
+				: undefined
+		}));
+
+	return {
+		type: 'list',
+		items
+	};
 }

@@ -7,24 +7,6 @@ export function toMachineName(name: string): string {
 		.replace(/^_+|_+$/g, '');
 }
 
-/**
- * Normalizes a server path by ensuring it starts and ends with '/'
- */
-export function normalizeServerPath(serverId: string): string {
-	let serverPath = serverId.split(':')[2];
-	if (!serverPath.startsWith('/')) {
-		serverPath = `/${serverPath}`;
-	}
-	if (!serverPath.endsWith('/')) {
-		serverPath = `${serverPath}/`;
-	}
-	return serverPath;
-}
-
-/**
- * Extracts and processes parameters from MCP request
- * Returns: { body, queryParameters, pathParameters, headers }
- */
 export function processParameters(parameters: Record<string, any>) {
 	let body: any = null;
 	const parametersCopy = { ...parameters };
@@ -65,12 +47,8 @@ export function processParameters(parameters: Record<string, any>) {
 	return { body, queryParameters, pathParameters, headers };
 }
 
-/**
- * Builds the final URL for an API call by replacing path parameters
- */
 export function buildApiUrl(
 	host: string,
-	serverPath: string,
 	path: string,
 	pathParameters: Map<string, string>,
 	queryParameters: URLSearchParams
@@ -81,18 +59,17 @@ export function buildApiUrl(
 			.replace(`:${key}`, encodeURIComponent(value));
 	}, path);
 
-	const baseUrl = `https://${host}${serverPath}${processedPath}`;
+	const baseUrl = host.startsWith('http')
+		? `${host}${processedPath}`
+		: `https://${host}${processedPath}`;
+
 	return queryParameters.toString().length > 0
 		? `${baseUrl}?${queryParameters.toString()}`
 		: baseUrl;
 }
 
-/**
- * Executes an API call based on MCP invocation parameters
- */
 export async function executeApiCall(
 	host: string,
-	serverPath: string,
 	method: string,
 	path: string,
 	parameters: Record<string, any>,
@@ -100,7 +77,10 @@ export async function executeApiCall(
 	securitySchemes?: Record<string, any>
 ): Promise<any> {
 	const { body, queryParameters, pathParameters, headers } = processParameters(parameters);
-	const url = buildApiUrl(host, serverPath, path, pathParameters, queryParameters);
+	const url = buildApiUrl(host, path, pathParameters, queryParameters);
+
+	console.log(`[API Call] ${method} ${url}`);
+	console.log(`[API Call] Parameters:`, parameters);
 
 	const requestHeaders: Record<string, string> = {
 		'Content-Type': contentType
@@ -113,7 +93,7 @@ export async function executeApiCall(
 
 	// Handle authentication
 	if (securitySchemes) {
-		for (const [schemeName, scheme] of Object.entries(securitySchemes)) {
+		for (const [, scheme] of Object.entries(securitySchemes)) {
 			if (scheme.type === 'apiKey' && scheme.in === 'header' && scheme.name) {
 				// API key would be passed as a parameter
 				const apiKeyParam = `header-${scheme.name}`;
@@ -144,9 +124,9 @@ export async function executeApiCall(
 
 	if (!response.ok) {
 		const errorBody = await response.text();
-		throw new Error(
-			`API call failed: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`
-		);
+		const errorMsg = `API call failed: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`;
+		console.error(`[API Call Error] ${errorMsg}`);
+		throw new Error(errorMsg);
 	}
 
 	// Handle different response content types
