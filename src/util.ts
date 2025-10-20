@@ -92,9 +92,19 @@ export function buildApiUrl(
 			.replace(`:${key}`, encodeURIComponent(value));
 	}, path);
 
-	const baseUrl = host.startsWith('http')
-		? `${host}${processedPath}`
-		: `https://${host}${processedPath}`;
+	// Normalize the URL construction to avoid double slashes and path duplication
+	let baseUrl: string;
+	if (host.startsWith('http')) {
+		// Remove trailing slash from host
+		const normalizedHost = host.endsWith('/') ? host.slice(0, -1) : host;
+		// Ensure path starts with slash
+		const normalizedPath = processedPath.startsWith('/') ? processedPath : `/${processedPath}`;
+		baseUrl = `${normalizedHost}${normalizedPath}`;
+	} else {
+		const normalizedHost = host.endsWith('/') ? host.slice(0, -1) : host;
+		const normalizedPath = processedPath.startsWith('/') ? processedPath : `/${processedPath}`;
+		baseUrl = `https://${normalizedHost}${normalizedPath}`;
+	}
 
 	const queryString = queryParameters.toString();
 	return queryString.length > 0 ? `${baseUrl}?${queryString}` : baseUrl;
