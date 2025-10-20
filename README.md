@@ -2,7 +2,7 @@
 
 [![Deploy to Cloudflare Workers](https://img.shields.io/badge/Deploy%20to-Cloudflare%20Workers-orange)](https://workers.cloudflare.com/)
 
-**MyMCP** is a powerful serverless application that dynamically converts any OpenAPI specification into a fully-functional Model Context Protocol (MCP) server. Deploy it once, and instantly expose any OpenAPI-compliant API as an MCP-compatible interface with tools, streaming, and more.
+**MyMCP** is a powerful serverless application that dynamically converts any OpenAPI v3 specification into a fully-functional Model Context Protocol (MCP) server. Deploy it once, and instantly expose any OpenAPI-compliant API as an MCP-compatible interface with tools, streaming, and more.
 
 🌐 **Live Instance**: [mymcp.gmitch215.xyz](https://mymcp.gmitch215.xyz)
 
