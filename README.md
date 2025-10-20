@@ -27,6 +27,21 @@
 3. **Tool Generation**: Each API endpoint becomes an MCP tool with proper schemas
 4. **Invoke & Stream**: Use standard MCP protocols to invoke tools or stream results
 
+```txt
+https://mymcp.gmitch215.xyz/{server}/sse
+```
+
+```bash
+# example servers
+https://mymcp.gmitch215.xyz/api.example.com/sse
+https://mymcp.gmitch215.xyz/https://api.openapi-specification.org/openapi.json/sse
+
+# pre configured server (tabroom)
+https://mymcp.gmitch215.xyz/tabroom/sse
+```
+
+Ensure that you properly encode the `{server}` portion to avoid invalid paths.
+
 ---
 
 ## 🚀 Getting Started
