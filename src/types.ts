@@ -1,450 +1,317 @@
-// MCP
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue };
 
-export interface MCPRequest {
-	model: string;
-	tool?: string;
-	parameters: {
-		[paramName: string]: any;
-	};
-}
+/** a JSON Schema node; deliberately loose since real specs carry arbitrary keywords */
+export type JsonSchema = Record<string, any>;
 
-export interface MCPResponse {
-	type: string;
-}
+// #region OpenAPI
 
-export interface ModelsResponse extends MCPResponse {
-	items: {
-		id: string;
-		name: string;
-		description: string;
-		capabilities: string[];
-		tools_endpoint?: string;
-	}[];
-}
+export type OpenAPIMethod =
+	'get' | 'post' | 'put' | 'delete' | 'patch' | 'options' | 'head' | 'trace';
 
-export interface ToolsResponse extends MCPResponse {
-	items: {
-		id: string;
-		name: string;
-		description: string;
-		parameters?: {
-			type: string;
-			properties: {
-				[paramName: string]: OpenAPISchema;
-			};
-			required?: string[];
-		};
-		returns?: any;
-	}[];
-}
+export const HTTP_METHODS: readonly OpenAPIMethod[] = [
+	'get',
+	'post',
+	'put',
+	'delete',
+	'patch',
+	'options',
+	'head',
+	'trace'
+];
 
-export interface Prompt {
-	name: string;
-	description?: string;
-	arguments?: {
-		name: string;
-		description?: string;
-		required?: boolean;
-	}[];
-}
-
-export interface PromptsResponse extends MCPResponse {
-	items: Prompt[];
-}
-
-// JSON-RPC 2.0 types
-export interface JsonRpcRequest {
-	jsonrpc: '2.0';
-	id?: string | number;
-	method: string;
-	params?: any;
-}
-
-export interface JsonRpcResponse {
-	jsonrpc: '2.0';
-	id: string | number | null;
-	result?: any;
-	error?: {
-		code: number;
-		message: string;
-		data?: any;
-	};
-	method?: string;
-}
-
-export interface JsonRpcNotification {
-	jsonrpc: '2.0';
-	method: string;
-	params?: any;
-}
-
-// OpenAPI
-
-export interface OpenAPI {
-	openapi: string;
-	servers: {
-		url: string;
-	}[];
-	info: {
-		title: string;
-		description: string;
-		version?: string;
-		license?: {
-			name: string;
-			url: string;
-		};
-	};
-	security?: Array<Record<string, string[]>>;
-	components?: {
-		schemas?: {
-			[name: string]: OpenAPISchema;
-		};
-		responses?: {
-			[name: string]: {
-				description: string;
-				content?: {
-					[contentType: string]: {
-						schema: OpenAPISchema;
-					};
-				};
-			};
-		};
-		securitySchemes?: {
-			[name: string]: {
-				type: 'apiKey' | 'http' | 'oauth2' | 'openIdConnect';
-				name?: string;
-				in?: 'query' | 'header' | 'cookie';
-				scheme?: string;
-				bearerFormat?: string;
-			};
-		};
-	};
-	paths: {
-		[path: string]: {
-			[M in OpenAPIMethod]?: {
-				summary?: string;
-				operationId: string;
-				description?: string;
-				parameters?: OpenAPIParameter[];
-				requestBody?: {
-					description?: string;
-					required: boolean;
-					content?: {
-						[contentType: string]: {
-							schema: OpenAPISchema;
-						};
-					};
-				};
-				responses: {
-					[statusCode: string]:
-						| {
-								description: string;
-								content?: {
-									[contentType: string]: {
-										schema: OpenAPISchema;
-									};
-								};
-						  }
-						| { $ref: string };
-				};
-			};
-		};
-	};
-}
-
-export type OpenAPIType = 'object' | 'array' | 'string' | 'number' | 'boolean' | 'integer' | 'null';
-export type OpenAPIMethod = 'get' | 'post' | 'put' | 'delete' | 'patch' | 'options' | 'head';
-export type OpenAPIParameterIn = 'query' | 'header' | 'path' | 'cookie';
+export type ParameterLocation = 'query' | 'header' | 'path' | 'cookie';
 
 export interface OpenAPIParameter {
 	name: string;
-	in: OpenAPIParameterIn;
+	in: ParameterLocation;
 	description?: string;
-	required: boolean;
-	schema: OpenAPISchema;
+	required?: boolean;
+	deprecated?: boolean;
+	style?: string;
+	explode?: boolean;
+	allowReserved?: boolean;
+	schema?: JsonSchema;
+	content?: Record<string, { schema?: JsonSchema }>;
+	$ref?: string;
 }
 
-export type OpenAPISchemaFull = (
-	| {
-			type: 'object';
-			properties?: {
-				[propName: string]: OpenAPISchema;
-			};
-			required?: string[];
-	  }
-	| { type: 'array'; items: OpenAPISchema }
-	| { type: 'string'; enum?: string[] }
-	| { type: 'number' | 'integer'; minimum?: number; maximum?: number }
-	| { type: 'boolean' }
-	| { type: 'null' }
-) & { description?: string };
+export interface OpenAPIMediaType {
+	schema?: JsonSchema;
+	encoding?: Record<string, { contentType?: string; style?: string; explode?: boolean }>;
+}
 
-export type OpenAPISchema = OpenAPISchemaFull | { $ref: string };
+export interface OpenAPIRequestBody {
+	description?: string;
+	required?: boolean;
+	content?: Record<string, OpenAPIMediaType>;
+	$ref?: string;
+}
+
+export interface OpenAPIResponse {
+	description?: string;
+	content?: Record<string, OpenAPIMediaType>;
+	headers?: Record<string, unknown>;
+	$ref?: string;
+}
+
+export interface OpenAPIOperation {
+	operationId?: string;
+	summary?: string;
+	description?: string;
+	tags?: string[];
+	deprecated?: boolean;
+	parameters?: OpenAPIParameter[];
+	requestBody?: OpenAPIRequestBody;
+	responses?: Record<string, OpenAPIResponse>;
+	security?: SecurityRequirement[];
+	servers?: OpenAPIServer[];
+}
+
+export type OpenAPIPathItem = {
+	summary?: string;
+	description?: string;
+	parameters?: OpenAPIParameter[];
+	servers?: OpenAPIServer[];
+	$ref?: string;
+} & { [M in OpenAPIMethod]?: OpenAPIOperation };
+
+export interface OpenAPIServer {
+	url: string;
+	description?: string;
+	variables?: Record<string, { default?: string; enum?: string[]; description?: string }>;
+}
+
+export type SecurityRequirement = Record<string, string[]>;
+
+export interface SecurityScheme {
+	type: 'apiKey' | 'http' | 'oauth2' | 'openIdConnect' | 'mutualTLS';
+	description?: string;
+	name?: string;
+	in?: ParameterLocation;
+	scheme?: string;
+	bearerFormat?: string;
+	openIdConnectUrl?: string;
+	flows?: Record<
+		string,
+		{
+			authorizationUrl?: string;
+			tokenUrl?: string;
+			refreshUrl?: string;
+			scopes?: Record<string, string>;
+		}
+	>;
+}
+
+export interface OpenAPIComponents {
+	schemas?: Record<string, JsonSchema>;
+	parameters?: Record<string, OpenAPIParameter>;
+	requestBodies?: Record<string, OpenAPIRequestBody>;
+	responses?: Record<string, OpenAPIResponse>;
+	headers?: Record<string, unknown>;
+	securitySchemes?: Record<string, SecurityScheme>;
+	pathItems?: Record<string, OpenAPIPathItem>;
+}
+
+export interface OpenAPI {
+	openapi: string;
+	info: {
+		title: string;
+		description?: string;
+		version?: string;
+		license?: { name: string; url?: string };
+	};
+	servers?: OpenAPIServer[];
+	security?: SecurityRequirement[];
+	components?: OpenAPIComponents;
+	paths?: Record<string, OpenAPIPathItem>;
+	webhooks?: Record<string, OpenAPIPathItem>;
+	$defs?: Record<string, JsonSchema>;
+	tags?: { name: string; description?: string }[];
+}
 
 /**
- * Validates that a parsed JSON object conforms to the OpenAPI interface
- * @param obj The object to validate
- * @returns true if valid, false otherwise
+ * Validates the minimum structure needed to build tools. `servers` is NOT required:
+ * a relative or absent server list is resolved against the document's own origin.
  */
-export function isValidOpenAPI(obj: any): obj is OpenAPI {
-	if (!obj || typeof obj !== 'object') {
-		return false;
-	}
+export function isValidOpenAPI(obj: unknown): obj is OpenAPI {
+	if (!obj || typeof obj !== 'object') return false;
+	const doc = obj as Record<string, unknown>;
 
-	// Check required fields
-	if (typeof obj.openapi !== 'string' || !obj.openapi) {
-		return false;
-	}
+	if (typeof doc.openapi !== 'string' || !doc.openapi) return false;
+	if (!doc.info || typeof doc.info !== 'object') return false;
 
-	if (!Array.isArray(obj.servers) || obj.servers.length === 0) {
-		return false;
-	}
+	const info = doc.info as Record<string, unknown>;
+	if (typeof info.title !== 'string' || !info.title) return false;
 
-	// Validate servers array
-	for (const server of obj.servers) {
-		if (!server || typeof server !== 'object' || typeof server.url !== 'string') {
-			return false;
-		}
-	}
+	const hasPaths = !!doc.paths && typeof doc.paths === 'object';
+	const hasWebhooks = !!doc.webhooks && typeof doc.webhooks === 'object';
+	return hasPaths || hasWebhooks;
+}
 
-	// Validate info object
-	if (!obj.info || typeof obj.info !== 'object') {
-		return false;
-	}
+export function isSwagger2(obj: unknown): boolean {
+	if (!obj || typeof obj !== 'object') return false;
+	const swagger = (obj as Record<string, unknown>).swagger;
+	return typeof swagger === 'string' && swagger.startsWith('2.');
+}
 
-	if (typeof obj.info.title !== 'string' || !obj.info.title) {
-		return false;
-	}
+// #endregion
 
-	if (typeof obj.info.description !== 'string' || !obj.info.description) {
-		return false;
-	}
+// #region MCP tools
 
-	// Validate paths object
-	if (!obj.paths || typeof obj.paths !== 'object') {
-		return false;
-	}
+/** how a tool argument maps back onto the operation that produced it */
+export interface ArgumentBinding {
+	in: ParameterLocation | 'body';
+	name: string;
+	style?: string;
+	explode?: boolean;
+	contentType?: string;
+}
 
-	return true;
+export interface ToolDefinition {
+	name: string;
+	title?: string;
+	description?: string;
+	inputSchema: JsonSchema;
+	outputSchema?: JsonSchema;
+	method: string;
+	path: string;
+	tags: string[];
+	operationId: string;
+	requestContentType?: string;
+	security?: SecurityRequirement[];
+	servers?: OpenAPIServer[];
+	bindings: Record<string, ArgumentBinding>;
+}
+
+export interface ToolTable {
+	tools: ToolDefinition[];
+	byName: Map<string, ToolDefinition>;
+	serverInfo: { name: string; version: string };
+	instructions?: string;
+	securitySchemes: Record<string, SecurityScheme>;
+	security: SecurityRequirement[];
+	servers: OpenAPIServer[];
+}
+
+// #endregion
+
+// #region JSON-RPC
+
+export const JSONRPC_VERSION = '2.0';
+
+export interface JsonRpcRequest {
+	jsonrpc: string;
+	id?: string | number | null;
+	method: string;
+	params?: Record<string, any>;
+}
+
+export interface JsonRpcError {
+	code: number;
+	message: string;
+	data?: unknown;
+}
+
+export interface JsonRpcResponse {
+	jsonrpc: string;
+	id: string | number | null;
+	result?: Record<string, unknown>;
+	error?: JsonRpcError;
+}
+
+export const ErrorCode = {
+	ParseError: -32700,
+	InvalidRequest: -32600,
+	MethodNotFound: -32601,
+	InvalidParams: -32602,
+	InternalError: -32603,
+	HeaderMismatch: -32020,
+	MissingRequiredClientCapability: -32021,
+	UnsupportedProtocolVersion: -32022
+} as const;
+
+/** true for a JSON-RPC notification: a message carrying no `id` at all */
+export function isNotification(msg: JsonRpcRequest): boolean {
+	return !('id' in msg) || msg.id === undefined;
+}
+
+// #endregion
+
+// #region protocol versions
+
+export const PROTOCOL_2026_07_28 = '2026-07-28';
+export const PROTOCOL_2025_11_25 = '2025-11-25';
+export const PROTOCOL_2025_06_18 = '2025-06-18';
+export const PROTOCOL_2025_03_26 = '2025-03-26';
+export const PROTOCOL_2024_11_05 = '2024-11-05';
+
+/** newest first; the order `server/discover` and `UnsupportedProtocolVersionError` report */
+export const SUPPORTED_PROTOCOLS = [
+	PROTOCOL_2026_07_28,
+	PROTOCOL_2025_11_25,
+	PROTOCOL_2025_06_18,
+	PROTOCOL_2025_03_26,
+	PROTOCOL_2024_11_05
+] as const;
+
+export type ProtocolVersion = (typeof SUPPORTED_PROTOCOLS)[number];
+
+export const LATEST_PROTOCOL: ProtocolVersion = PROTOCOL_2026_07_28;
+
+/** version a request without an MCP-Protocol-Version header is treated as */
+export const FALLBACK_PROTOCOL: ProtocolVersion = PROTOCOL_2025_03_26;
+
+export function isSupportedProtocol(v: string): v is ProtocolVersion {
+	return (SUPPORTED_PROTOCOLS as readonly string[]).includes(v);
 }
 
 /**
- * Helper function to resolve $defs references with ambiguity detection
- * Supports:
- * - Local: #/$defs/DefName within the current schema context
- * - Root-level: #/$defs/DefName (OpenAPI 3.1 root $defs)
- * - Exact: #/components/schemas/SchemaName/$defs/DefName
- * - Bare search: #/$defs/DefName (searches all component schemas if not in root)
+ * 2026-07-28 dropped the initialize handshake and sessions in favour of per-request `_meta`.
+ * Everything earlier keeps the handshake, so this split decides which envelope applies.
  */
-function resolveDefsReference(openapi: OpenAPI, ref: string, localSchema?: any): any | null {
-	if (!openapi || !ref || typeof ref !== 'string') {
-		return null;
-	}
-
-	const comps = openapi.components?.schemas || {};
-
-	if (ref.startsWith('#/components/schemas/')) {
-		const remainder = ref.replace('#/components/schemas/', '');
-		const schemaMatch = remainder.match(/^([^/]+)\/\$defs\/(.+)$/);
-		if (schemaMatch) {
-			const [, schemaName, defPath] = schemaMatch;
-			const schema = comps[schemaName];
-			if (schema && typeof schema === 'object' && '$defs' in schema) {
-				let cur: any = (schema as any).$defs;
-				for (const part of defPath.split('/')) {
-					if (!cur || !part || !(part in cur)) {
-						return null;
-					}
-					cur = cur[part];
-				}
-				return cur;
-			}
-		}
-	}
-
-	if (ref.startsWith('#/$defs/')) {
-		const defPath = ref.replace('#/$defs/', '').split('/');
-
-		// First, check local schema context (same schema that contains the $ref)
-		if (localSchema && typeof localSchema === 'object' && localSchema.$defs) {
-			let cur: any = localSchema.$defs;
-			let matched = true;
-			for (const part of defPath) {
-				if (!cur || !part || !(part in cur)) {
-					matched = false;
-					break;
-				}
-				cur = cur[part];
-			}
-			if (matched && cur) {
-				return cur;
-			}
-		}
-
-		const openapiAny = openapi as any;
-		if (openapiAny.$defs) {
-			let cur: any = openapiAny.$defs;
-			let matched = true;
-			for (const part of defPath) {
-				if (!cur || !part || !(part in cur)) {
-					matched = false;
-					break;
-				}
-				cur = cur[part];
-			}
-			if (matched && cur) {
-				return cur;
-			}
-		}
-
-		// If not found at root, search component schemas
-		const matches: Array<{ schemaName: string; def: any }> = [];
-		for (const schemaName of Object.keys(comps)) {
-			const node: any = comps[schemaName];
-			if (!node || typeof node !== 'object' || !node.$defs) continue;
-
-			let cur: any = node.$defs;
-			let matched = true;
-			for (const part of defPath) {
-				if (!cur || !part || !(part in cur)) {
-					matched = false;
-					break;
-				}
-				cur = cur[part];
-			}
-			if (matched && cur) {
-				matches.push({ schemaName, def: cur });
-			}
-		}
-
-		if (matches.length === 0) {
-			return null;
-		}
-
-		if (matches.length > 1) {
-			const schemaNames = matches.map((m) => m.schemaName).join(', ');
-			console.warn(
-				`Ambiguous $defs reference "${ref}" found in multiple schemas: ${schemaNames}. Using first match from "${matches[0].schemaName}". Consider using explicit reference: #/components/schemas/${matches[0].schemaName}/$defs/${defPath.join('/')}`
-			);
-		}
-
-		return matches[0].def;
-	}
-
-	return null;
+export function isStatelessEra(v: string): boolean {
+	return v >= PROTOCOL_2026_07_28;
 }
 
-export function findResponseSchema(
-	openapi: OpenAPI,
-	ref: string
-): Exclude<
-	NonNullable<OpenAPI['paths'][string][OpenAPIMethod]>['responses'][string],
-	{ $ref: string }
-> {
-	if (!openapi || !ref || typeof ref !== 'string') {
-		throw new Error('Invalid parameters for findResponseSchema');
-	}
+export const META_PROTOCOL_VERSION = 'io.modelcontextprotocol/protocolVersion';
+export const META_CLIENT_INFO = 'io.modelcontextprotocol/clientInfo';
+export const META_CLIENT_CAPABILITIES = 'io.modelcontextprotocol/clientCapabilities';
+export const META_SERVER_INFO = 'io.modelcontextprotocol/serverInfo';
+export const META_LOG_LEVEL = 'io.modelcontextprotocol/logLevel';
+export const TASKS_EXTENSION = 'io.modelcontextprotocol/tasks';
 
-	if (ref.startsWith('#/components/responses/')) {
-		const responseName = ref.replace('#/components/responses/', '');
-		const response = openapi.components?.responses?.[responseName];
+// #endregion
 
-		if (!response) {
-			throw new Error(`Response not found: ${ref}`);
-		}
+// #region MCP content
 
-		if (response.content) {
-			for (const [key, schemaObj] of Object.entries(response.content)) {
-				if (!key || !schemaObj?.schema) continue;
-
-				if ('$ref' in schemaObj.schema) {
-					const res = findSchema(openapi, schemaObj.schema);
-					if (!res) continue;
-					response.content[key].schema = res;
-				}
-			}
-		}
-
-		return response;
-	}
-
-	// Try resolving as a $defs reference
-	const defsResult = resolveDefsReference(openapi, ref);
-	if (defsResult) {
-		return defsResult as any;
-	}
-
-	throw new Error(`Unsupported $ref format: ${ref}`);
+export interface TextContent {
+	type: 'text';
+	text: string;
 }
 
-export function findSchema(
-	openapi: OpenAPI,
-	schema: OpenAPISchema,
-	rootSchema?: any
-): OpenAPISchemaFull | null {
-	if (!openapi || !schema) return null;
-
-	const contextSchema =
-		rootSchema || (schema && typeof schema === 'object' && '$defs' in schema ? schema : undefined);
-
-	if ('$ref' in schema) {
-		const ref = schema.$ref;
-
-		if (!ref || typeof ref !== 'string') {
-			return null;
-		}
-
-		if (ref.startsWith('#/components/schemas/') && !ref.includes('/$defs/')) {
-			const schemaName = ref.replace('#/components/schemas/', '');
-			const foundSchema = openapi.components?.schemas?.[schemaName];
-			if (!foundSchema) {
-				return null;
-			}
-			return foundSchema as OpenAPISchemaFull;
-		}
-
-		const defsResult = resolveDefsReference(openapi, ref, contextSchema);
-		if (defsResult) {
-			if (defsResult.$ref) {
-				return findSchema(openapi, defsResult, contextSchema);
-			}
-
-			return defsResult as OpenAPISchemaFull;
-		}
-
-		throw new Error(`Unsupported $ref format: ${ref}`);
-	}
-
-	if (schema.type === 'object' && schema.properties) {
-		const resolvedProperties: Record<string, OpenAPISchema> = {};
-		for (const [propName, propSchema] of Object.entries(schema.properties)) {
-			if (!propName || !propSchema) continue;
-
-			if ('$ref' in propSchema) {
-				const res = findSchema(openapi, propSchema, contextSchema);
-				if (!res) continue;
-
-				resolvedProperties[propName] = res;
-			} else {
-				resolvedProperties[propName] = propSchema;
-			}
-		}
-
-		return {
-			...schema,
-			properties: resolvedProperties
-		};
-	}
-
-	if (schema.type === 'array' && schema.items) {
-		if ('$ref' in schema.items) {
-			const resolvedItems = findSchema(openapi, schema.items, contextSchema);
-			return {
-				...schema,
-				items: resolvedItems || { type: 'null' }
-			};
-		}
-	}
-
-	return schema;
+export interface ImageContent {
+	type: 'image';
+	data: string;
+	mimeType: string;
 }
+
+export interface AudioContent {
+	type: 'audio';
+	data: string;
+	mimeType: string;
+}
+
+export interface EmbeddedResource {
+	type: 'resource';
+	resource: { uri: string; mimeType?: string; text?: string; blob?: string };
+}
+
+export type ContentBlock = TextContent | ImageContent | AudioContent | EmbeddedResource;
+
+export interface CallToolResult {
+	content: ContentBlock[];
+	structuredContent?: JsonValue;
+	isError?: boolean;
+}
+
+// #endregion
