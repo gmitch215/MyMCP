@@ -1,0 +1,62 @@
+name: Integration
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Integration (E2E)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 'latest'
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Cache docker images
+        uses: actions/cache@v4
+        with:
+          path: /tmp/docker-images
+          key: docker-images-${{ hashFiles('docker/compose.yml') }}
+      - name: Load cached images
+        run: |
+          if [ -f /tmp/docker-images/images.tar ]; then
+            docker load -i /tmp/docker-images/images.tar
+          fi
+      - name: Start fixture services
+        run: docker compose -f docker/compose.yml up -d --wait
+      - name: Save images to cache
+        run: |
+          mkdir -p /tmp/docker-images
+          if [ ! -f /tmp/docker-images/images.tar ]; then
+            docker save -o /tmp/docker-images/images.tar \
+              $(docker compose -f docker/compose.yml config --images)
+          fi
+      - name: Run integration tests
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          retry_wait_seconds: 20
+          command: bunx vitest run --reporter=default
+        env:
+          INTEGRATION: '1'
+      - name: Dump service logs
+        if: failure()
+        run: docker compose -f docker/compose.yml logs
+      - name: Stop fixture services
+        if: always()
+        run: docker compose -f docker/compose.yml down -v

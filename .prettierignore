@@ -1,7 +1,9 @@
-.vsocde/
+.vscode/
 bun.lock
 node_modules/
-package.json
 package-lock.json
 LICENSE
 tsconfig.json
+coverage/
+test-report.junit.xml
+docker/specs/

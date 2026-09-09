@@ -1,0 +1,59 @@
+name: Conformance
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inspector:
+    name: MCP Inspector
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 'latest'
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Start the worker
+        run: |
+          bunx wrangler dev --port 8787 --local > /tmp/wrangler.log 2>&1 &
+          for i in $(seq 1 60); do
+            sleep 2
+            if curl -sSf -o /dev/null http://127.0.0.1:8787/; then
+              echo "worker ready"
+              exit 0
+            fi
+          done
+          echo "worker did not start"
+          cat /tmp/wrangler.log
+          exit 1
+      - name: Check tool schema portability
+        run: |
+          bunx --bun @modelcontextprotocol/inspector@2 --cli \
+            --transport http --server-url http://127.0.0.1:8787/petstore/mcp \
+            --method tools/list --strict --format json > /tmp/tools.json
+      - name: Call a tool through the inspector
+        run: |
+          bunx --bun @modelcontextprotocol/inspector@2 --cli \
+            --transport http --server-url http://127.0.0.1:8787/petstore/mcp \
+            --method tools/call --tool-name getInventory --format json
+      - name: Read the description resource
+        run: |
+          bunx --bun @modelcontextprotocol/inspector@2 --cli \
+            --transport http --server-url http://127.0.0.1:8787/petstore/mcp \
+            --method resources/list --format json
+      - name: Dump worker logs
+        if: failure()
+        run: cat /tmp/wrangler.log

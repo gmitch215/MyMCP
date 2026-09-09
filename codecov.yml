@@ -1,0 +1,61 @@
+coverage:
+  precision: 2
+  round: down
+  range: '70...95'
+  status:
+    project:
+      default:
+        target: 85%
+        threshold: 2%
+        informational: false
+    patch:
+      default:
+        target: 80%
+        threshold: 5%
+        informational: false
+
+flags:
+  unit:
+    paths:
+      - src/
+    carryforward: true
+  integration:
+    paths:
+      - src/
+    carryforward: true
+
+component_management:
+  individual_components:
+    - component_id: openapi
+      name: OpenAPI pipeline
+      paths:
+        - src/openapi/**
+    - component_id: mcp
+      name: MCP transports
+      paths:
+        - src/mcp/**
+    - component_id: auth
+      name: Authorization
+      paths:
+        - src/auth/**
+    - component_id: core
+      name: Worker core
+      paths:
+        - src/index.ts
+        - src/resolve.ts
+        - src/discover.ts
+        - src/net.ts
+        - src/state.ts
+        - src/env.ts
+        - src/types.ts
+
+ignore:
+  - tests/**
+  - evals/**
+  - scripts/**
+  - public/**
+
+comment:
+  layout: 'reach, diff, flags, components, files'
+  behavior: default
+  require_changes: true

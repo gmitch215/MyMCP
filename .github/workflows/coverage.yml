@@ -1,0 +1,91 @@
+name: Coverage
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 'latest'
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Run unit tests with coverage
+        run: bunx vitest run --coverage --reporter=default --reporter=junit --outputFile=test-report.junit.xml
+      - name: Upload coverage
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/clover.xml
+          flags: unit
+          report_type: coverage
+          fail_ci_if_error: false
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./test-report.junit.xml
+          flags: unit
+          report_type: test_results
+          fail_ci_if_error: false
+      - name: Archive coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-unit
+          path: coverage/
+          retention-days: 14
+
+  integration:
+    name: Integration Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 'latest'
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Start fixture services
+        run: docker compose -f docker/compose.yml up -d --wait
+      - name: Run integration tests with coverage
+        run: bunx vitest run --coverage --reporter=default
+        env:
+          INTEGRATION: '1'
+      - name: Upload coverage
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/clover.xml
+          flags: integration
+          report_type: coverage
+          fail_ci_if_error: false
+      - name: Dump service logs
+        if: failure()
+        run: docker compose -f docker/compose.yml logs
+      - name: Stop fixture services
+        if: always()
+        run: docker compose -f docker/compose.yml down -v
