@@ -4,22 +4,35 @@
 	"description": "Custom MCP servers from any API",
 	"scripts": {
 		"dev": "bunx wrangler dev --port 8787",
-		"deploy": "bunx wrangler publish",
+		"deploy": "bunx wrangler deploy",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"test:coverage": "vitest run --coverage",
+		"test:e2e": "INTEGRATION=1 vitest run",
+		"test:e2e:coverage": "INTEGRATION=1 vitest run --coverage",
+		"servers:check": "bun run scripts/check-servers.ts",
+		"evals": "bun run evals/run.ts",
 		"prettier": "prettier --write .",
 		"prettier:check": "prettier --check .",
 		"prepare": "husky install"
 	},
+	"dependencies": {
+		"yaml": "^2.8.1"
+	},
 	"devDependencies": {
+		"@cloudflare/vitest-pool-workers": "^0.22.0",
+		"@cloudflare/workers-types": "^5.20260908.1",
+		"@modelcontextprotocol/sdk": "^1.22.0",
+		"@types/bun": "^1.4.0",
+		"@vitest/coverage-istanbul": "^4.1.10",
 		"husky": "^9.1.7",
 		"lint-staged": "^16.4.0",
 		"prettier": "^3.9.6",
+		"vitest": "^4.1.10",
 		"wrangler": "^4.130.0"
 	},
 	"lint-staged": {
 		"*.{js,ts,json,md,yml}": "prettier --write"
-	},
-	"dependencies": {
-		"@cloudflare/workers-types": "^5.20260908.1",
-		"hono": "^4.13.7"
 	}
 }
