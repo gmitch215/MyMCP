@@ -1,0 +1,19 @@
+name: mymcp-fixtures
+
+services:
+  echo:
+    image: mccutchen/go-httpbin:v2.15.0@sha256:24528cf5229d0b70065ac27e6c9e4d96f5452a84a3ce4433e56573c18d96827a
+    ports:
+      - '127.0.0.1:18081:8080'
+
+  specs:
+    image: nginx:1.29-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+    ports:
+      - '127.0.0.1:18082:80'
+    volumes:
+      - ./specs:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:80/petstore.json >/dev/null || exit 1']
+      interval: 2s
+      timeout: 5s
+      retries: 30

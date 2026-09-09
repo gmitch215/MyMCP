@@ -1,0 +1,303 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Echo API",
+    "description": "Reflects the request it receives.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:18081"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "headerKey": {
+        "type": "apiKey",
+        "name": "X-Api-Key",
+        "in": "header"
+      }
+    }
+  },
+  "paths": {
+    "/anything/{segment}": {
+      "parameters": [
+        {
+          "name": "segment",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "echoGet",
+        "tags": [
+          "echo"
+        ],
+        "parameters": [
+          {
+            "name": "tags",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "style": "deepObject",
+            "explode": true,
+            "schema": {
+              "type": "object"
+            }
+          },
+          {
+            "name": "csv",
+            "in": "query",
+            "style": "form",
+            "explode": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "X-Trace",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "echoPost",
+        "tags": [
+          "echo"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "echoDelete",
+        "tags": [
+          "echo"
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bearer": {
+      "get": {
+        "operationId": "needsBearer",
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/gzip": {
+      "get": {
+        "operationId": "gzipped",
+        "tags": [
+          "encoding"
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status/500": {
+      "get": {
+        "operationId": "serverError",
+        "tags": [
+          "status"
+        ],
+        "responses": {
+          "500": {
+            "description": "boom"
+          }
+        }
+      }
+    },
+    "/status/204": {
+      "get": {
+        "operationId": "noContent",
+        "tags": [
+          "status"
+        ],
+        "responses": {
+          "204": {
+            "description": "empty"
+          }
+        }
+      }
+    },
+    "/image/png": {
+      "get": {
+        "operationId": "pngImage",
+        "tags": [
+          "media"
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "image/png": {}
+            }
+          }
+        }
+      }
+    },
+    "/redirect-to": {
+      "get": {
+        "operationId": "followRedirect",
+        "tags": [
+          "redirect"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status_code",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/delay/{seconds}": {
+      "get": {
+        "operationId": "slowResponse",
+        "tags": [
+          "timing"
+        ],
+        "parameters": [
+          {
+            "name": "seconds",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
