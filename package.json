@@ -11,15 +11,15 @@
 	},
 	"devDependencies": {
 		"husky": "^9.1.7",
-		"lint-staged": "^16.2.4",
-		"prettier": "^3.6.2",
-		"wrangler": "^4.43.0"
+		"lint-staged": "^16.4.0",
+		"prettier": "^3.9.6",
+		"wrangler": "^4.130.0"
 	},
 	"lint-staged": {
 		"*.{js,ts,json,md,yml}": "prettier --write"
 	},
 	"dependencies": {
-		"@cloudflare/workers-types": "^4.20251011.0",
-		"hono": "^4.10.1"
+		"@cloudflare/workers-types": "^4.20260702.1",
+		"hono": "^4.13.7"
 	}
 }
