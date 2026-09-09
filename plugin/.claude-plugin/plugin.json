@@ -1,0 +1,14 @@
+{
+	"name": "mymcp",
+	"displayName": "MyMCP",
+	"version": "1.0.0",
+	"description": "MCP servers generated from OpenAPI descriptions, for a set of public APIs",
+	"author": {
+		"name": "gmitch215",
+		"url": "https://github.com/gmitch215"
+	},
+	"homepage": "https://mymcp.gmitch215.xyz",
+	"repository": "https://github.com/gmitch215/MyMCP",
+	"license": "MPL-2.0",
+	"keywords": ["mcp", "openapi", "api", "rest", "cloudflare-workers"]
+}

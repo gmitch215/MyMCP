@@ -1,0 +1,18 @@
+{
+	"name": "mymcp",
+	"owner": {
+		"name": "gmitch215",
+		"url": "https://github.com/gmitch215"
+	},
+	"plugins": [
+		{
+			"name": "mymcp",
+			"source": "./plugin",
+			"description": "MCP servers generated from OpenAPI descriptions, for a set of public APIs",
+			"version": "1.0.0",
+			"author": {
+				"name": "gmitch215"
+			}
+		}
+	]
+}

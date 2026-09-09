@@ -1,0 +1,29 @@
+{
+	"mcpServers": {
+		"petstore": {
+			"type": "http",
+			"url": "https://mymcp.gmitch215.xyz/petstore/mcp"
+		},
+		"tabroom": {
+			"type": "http",
+			"url": "https://mymcp.gmitch215.xyz/tabroom/mcp",
+			"headers": {
+				"X-Mcp-Upstream-Authorization": "${TABROOM_TOKEN}"
+			}
+		},
+		"digitalocean": {
+			"type": "http",
+			"url": "https://mymcp.gmitch215.xyz/digitalocean/mcp?tags=Droplets",
+			"headers": {
+				"X-Mcp-Upstream-Authorization": "${DIGITALOCEAN_TOKEN}"
+			}
+		},
+		"stripe": {
+			"type": "http",
+			"url": "https://mymcp.gmitch215.xyz/stripe/mcp?include=Get*&max=200",
+			"headers": {
+				"X-Mcp-Upstream-Authorization": "${STRIPE_SECRET_KEY}"
+			}
+		}
+	}
+}
