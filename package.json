@@ -25,11 +25,11 @@
 		"@cloudflare/workers-types": "^5.20260908.1",
 		"@modelcontextprotocol/sdk": "^1.22.0",
 		"@types/bun": "^1.4.0",
-		"@vitest/coverage-istanbul": "^4.1.10",
+		"@vitest/coverage-istanbul": "^5.0.0",
 		"husky": "^9.1.7",
 		"lint-staged": "^16.4.0",
 		"prettier": "^3.9.6",
-		"vitest": "^4.1.10",
+		"vitest": "^5.0.0",
 		"wrangler": "^4.130.0"
 	},
 	"lint-staged": {
