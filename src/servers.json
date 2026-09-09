@@ -1,6 +1,13 @@
 {
-	"tabroom": "https://api.tabroom.com/v1/docs",
+	"tabroom": "https://api.tabroom.com/v1",
 	"petstore": "https://petstore3.swagger.io/api/v3/openapi.json",
-	"github": "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json",
-	"earth-app": "https://api.earth-app.com/openapi"
+	"petstore31": "https://petstore31.swagger.io/api/v31/openapi.json",
+	"earth-app": "https://api.earth-app.com/openapi",
+	"twilio": "https://raw.githubusercontent.com/twilio/twilio-oai/main/spec/json/twilio_api_v2010.json",
+	"box": "https://raw.githubusercontent.com/box/box-openapi/main/openapi.json",
+	"digitalocean": "https://raw.githubusercontent.com/digitalocean/openapi/main/specification/DigitalOcean-public.v2.yaml",
+	"slack": "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json",
+	"openai": "https://raw.githubusercontent.com/openai/openai-openapi/master/openapi.yaml",
+	"asana": "https://raw.githubusercontent.com/Asana/openapi/master/defs/asana_oas.yaml",
+	"stripe": "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json"
 }
