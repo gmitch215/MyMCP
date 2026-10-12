@@ -245,6 +245,47 @@ describe('buildToolTable', () => {
 		expect(table.tools[0]!.outputSchema).toMatchObject({ type: 'array' });
 	});
 
+	it('opens closed objects in the outputSchema but keeps the inputSchema strict', () => {
+		const person = {
+			type: 'object',
+			properties: { id: { type: 'integer' } },
+			additionalProperties: false
+		};
+		const table = buildToolTable(
+			makeDoc({
+				paths: {
+					'/session': {
+						post: {
+							operationId: 'session',
+							requestBody: {
+								content: { 'application/json': { schema: { $ref: '#/components/schemas/Person' } } }
+							},
+							responses: {
+								'200': {
+									description: 'ok',
+									content: {
+										'application/json': {
+											schema: {
+												type: 'object',
+												properties: { person: { $ref: '#/components/schemas/Person' } },
+												additionalProperties: false
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				},
+				components: { schemas: { Person: person } }
+			})
+		);
+
+		const tool = table.tools[0]!;
+		expect(JSON.stringify(tool.outputSchema)).not.toContain('"additionalProperties":false');
+		expect(JSON.stringify(tool.inputSchema)).toContain('"additionalProperties":false');
+	});
+
 	it('omits outputSchema when the caller disables it', () => {
 		const doc = makeDoc({
 			paths: {

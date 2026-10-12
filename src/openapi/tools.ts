@@ -315,6 +315,9 @@ export function buildToolTable(doc: OpenAPI, filter: ToolFilter = {}): ToolTable
 			if (tool.outputSchema) attachDefs(tool.outputSchema, defs);
 		}
 	}
+	for (const tool of tools) {
+		if (tool.outputSchema) tool.outputSchema = openObjects(tool.outputSchema) as JsonSchema;
+	}
 
 	let filtered = tools.filter((t) => passesFilter(t, filter));
 	if (filter.max !== undefined && filter.max >= 0) filtered = filtered.slice(0, filter.max);
@@ -333,6 +336,23 @@ export function buildToolTable(doc: OpenAPI, filter: ToolFilter = {}): ToolTable
 		security: doc.security ?? [],
 		servers: doc.servers ?? []
 	};
+}
+
+/**
+ * copies a schema without closed-object constraints; specs under-document responses, and
+ * clients reject structuredContent carrying an undeclared field
+ */
+function openObjects(value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(openObjects);
+	if (!value || typeof value !== 'object') return value;
+
+	const out: Record<string, unknown> = {};
+	for (const [key, child] of Object.entries(value)) {
+		if ((key === 'additionalProperties' || key === 'unevaluatedProperties') && child === false)
+			continue;
+		out[key] = openObjects(child);
+	}
+	return out;
 }
 
 function attachDefs(schema: JsonSchema, defs: Record<string, JsonSchema>): void {
