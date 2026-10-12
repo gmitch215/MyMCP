@@ -1,3 +1,5 @@
+import type { LoginSetup } from '../auth/login';
+import { loginToken, withToken } from '../auth/login';
 import type { SuppliedCredentials } from '../auth/upstream';
 import { applySecurity, effectiveSecurity } from '../auth/upstream';
 import type { Env } from '../env';
@@ -51,6 +53,8 @@ export interface McpContext {
 	principal?: string;
 	/** upstream tokens held for the authenticated principal, keyed by security scheme */
 	storedCredentials?: Map<string, string>;
+	/** exchanges X-Mcp-Upstream-Login-* for a token before each call, or the reason it cannot */
+	login?: LoginSetup;
 	/** builds the URL that starts an upstream OAuth flow; absent when Tier 2 auth is off */
 	connectUrl?: (schemes: string[]) => string;
 	waitUntil?: (promise: Promise<unknown>) => void;
@@ -442,13 +446,30 @@ async function callTool(params: Record<string, any>, ctx: McpContext): Promise<D
 
 	// #endregion
 
+	const callOptions = {
+		timeoutMs: fetchTimeoutMs(ctx.env),
+		maxResponseBytes: maxResponseBytes(ctx.env),
+		credentialHosts: ctx.credentialHosts,
+		exemptHosts: exemptHosts(ctx.env)
+	};
+
+	const login = ctx.login;
+	if (login && 'error' in login) return ok(toolError(login.error));
+
 	const requirements = effectiveSecurity(tool.security, ctx.table.security);
-	const credentials = applySecurity(
-		ctx.table.securitySchemes,
-		requirements,
-		ctx.supplied,
-		ctx.storedCredentials
-	);
+	const credentialsWith = (token?: string) =>
+		applySecurity(
+			ctx.table.securitySchemes,
+			requirements,
+			login && token
+				? withToken(ctx.supplied, login.recipe.scheme, login.scheme, token)
+				: ctx.supplied,
+			ctx.storedCredentials
+		);
+
+	let token = login ? await loginToken(login, ctx.baseUrl, callOptions) : undefined;
+	if (token && 'error' in token) return ok(toolError(token.error));
+	let credentials = credentialsWith(token?.token);
 
 	if (
 		credentials.missing.length > 0 &&
@@ -472,12 +493,15 @@ async function callTool(params: Record<string, any>, ctx: McpContext): Promise<D
 	const wantsTask =
 		tasksEnabled(ctx.env) && supportsExtension(ctx.clientCapabilities, TASKS_EXTENSION);
 
-	const outcome = await executeCall(tool, args, ctx.baseUrl, credentials, {
-		timeoutMs: fetchTimeoutMs(ctx.env),
-		maxResponseBytes: maxResponseBytes(ctx.env),
-		credentialHosts: ctx.credentialHosts,
-		exemptHosts: exemptHosts(ctx.env)
-	});
+	let outcome = await executeCall(tool, args, ctx.baseUrl, credentials, callOptions);
+
+	// a cached token may have expired upstream; log in once more before giving up
+	if (login && token?.cached && outcome.status === 401) {
+		token = await loginToken(login, ctx.baseUrl, callOptions, true);
+		if ('error' in token) return ok(toolError(token.error));
+		credentials = credentialsWith(token.token);
+		outcome = await executeCall(tool, args, ctx.baseUrl, credentials, callOptions);
+	}
 
 	// an async upstream hands back a job pointer; surface it as a task rather than a dead end
 	if (wantsTask && outcome.status === 202 && outcome.location) {

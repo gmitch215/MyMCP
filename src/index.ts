@@ -12,6 +12,7 @@ import {
 	storeUpstreamCredential,
 	unauthorized
 } from './auth/resource';
+import { prepareLogin, readLoginRecipe } from './auth/login';
 import { readSuppliedCredentials } from './auth/upstream';
 import type { Env } from './env';
 import { authEnabled } from './env';
@@ -25,6 +26,7 @@ import {
 } from './mcp/sse';
 import { handleStreamableHttp } from './mcp/streamable';
 import {
+	ALIASES,
 	ResolveError,
 	credentialHosts,
 	getToolTable,
@@ -137,7 +139,19 @@ function landing(url: URL): Response {
 			example: `${url.origin}/petstore/mcp`
 		},
 		servers: knownAliases(),
-		filters: ['tags', 'methods', 'include', 'exclude', 'max', 'server', 'confirm', 'outputSchema'],
+		filters: [
+			'tags',
+			'methods',
+			'include',
+			'exclude',
+			'max',
+			'server',
+			'confirm',
+			'outputSchema',
+			'login',
+			'loginToken',
+			'loginScheme'
+		],
 		protocolVersions: ['2026-07-28', '2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']
 	});
 }
@@ -181,6 +195,28 @@ async function buildMcpHandler(
 
 	const confirmMethods = readConfirmMethods(url);
 
+	const recipe = readLoginRecipe(
+		url,
+		ALIASES[token.trim()]?.login,
+		Object.keys(table.securitySchemes)
+	);
+	const findLogin = async (operationId: string) =>
+		table.tools.find((t) => t.operationId === operationId) ??
+		// a filter may have hidden the login operation, so look it up unfiltered
+		(await getToolTable(specUrl, { include: [operationId] }, env)).table.tools.find(
+			(t) => t.operationId === operationId
+		);
+	const login =
+		supplied.login &&
+		prepareLogin(
+			recipe,
+			supplied.login,
+			recipe ? await findLogin(recipe.operationId) : undefined,
+			table.securitySchemes,
+			baseUrl,
+			hosts
+		);
+
 	return (protocol: ProtocolVersion, clientCapabilities: Record<string, any>): McpContext => ({
 		env,
 		table,
@@ -194,6 +230,7 @@ async function buildMcpHandler(
 		confirmMethods,
 		principal: principal?.sub,
 		storedCredentials: stored,
+		login,
 		connectUrl: principal
 			? (schemes: string[]) => {
 					const scheme = schemes[0] ?? 'default';

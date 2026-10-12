@@ -1,9 +1,11 @@
 import type { SecurityRequirement, SecurityScheme } from '../types';
+import type { LoginCredentials } from './login';
 
 const PREFIX = 'x-mcp-upstream-';
 const QUERY_PREFIX = `${PREFIX}query-`;
 const COOKIE_PREFIX = `${PREFIX}cookie-`;
 const SCHEME_PREFIX = `${PREFIX}scheme-`;
+const LOGIN_PREFIX = `${PREFIX}login-`;
 
 /** credentials the caller supplied for the upstream API, keyed by where they belong */
 export interface SuppliedCredentials {
@@ -12,6 +14,8 @@ export interface SuppliedCredentials {
 	query: Map<string, string>;
 	cookies: Map<string, string>;
 	schemes: Map<string, string>;
+	/** a username and password for the description's login recipe, never forwarded as-is */
+	login?: LoginCredentials;
 }
 
 /** credentials resolved against the spec's security schemes, ready to apply to a request */
@@ -49,10 +53,19 @@ export function emptyCredentials(): SuppliedCredentials {
  */
 export function readSuppliedCredentials(headers: Headers): SuppliedCredentials {
 	const supplied = emptyCredentials();
+	let username: string | undefined;
+	let password: string | undefined;
 
 	headers.forEach((value, rawName) => {
 		const name = rawName.toLowerCase();
 		if (!name.startsWith(PREFIX) || !value) return;
+
+		if (name.startsWith(LOGIN_PREFIX)) {
+			const field = name.slice(LOGIN_PREFIX.length);
+			if (field === 'username') username = value;
+			else if (field === 'password') password = value;
+			return;
+		}
 
 		if (name.startsWith(QUERY_PREFIX)) {
 			const key = rawName.slice(QUERY_PREFIX.length);
@@ -80,6 +93,7 @@ export function readSuppliedCredentials(headers: Headers): SuppliedCredentials {
 		supplied.headers.set(canonicalHeaderName(headerName), value);
 	});
 
+	if (username && password) supplied.login = { username, password };
 	return supplied;
 }
 

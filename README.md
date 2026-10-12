@@ -104,6 +104,48 @@ handing MyMCP a key for a named API rather than having an MCP token forwarded on
 leaves `Authorization` free for MCP's own authorization. For the flow the specification prefers,
 where MyMCP holds the upstream tokens itself, see [Authorization](#authorization).
 
+### Login Proxy
+
+Some APIs only issue tokens through a username and password login, and those tokens expire. For
+these, the client sends the username and password and MyMCP logs in before calling the API:
+
+| Header                          | Use                    |
+| ------------------------------- | ---------------------- |
+| `X-Mcp-Upstream-Login-Username` | the account's username |
+| `X-Mcp-Upstream-Login-Password` | the account's password |
+
+The username and password live in the client's configuration. MyMCP never writes them anywhere. It
+keeps the token it gets back in memory, keyed by a hash of the credentials, and reuses it until the
+API answers `401`; then it logs in once more and retries the call. A restarted Worker instance
+starts without the token and logs in on its next call.
+
+A login recipe names the operation to call and where its token goes. The `tabroom` alias carries one
+in `servers.json`:
+
+```json
+{
+	"tabroom": {
+		"url": "https://api.tabroom.com/v1",
+		"login": { "operationId": "authLogin", "token": "token", "scheme": "cookieAuth" }
+	}
+}
+```
+
+Any description can take a recipe from query parameters, which override an alias's fields:
+
+| Parameter     | Effect                                      | Default                       |
+| ------------- | ------------------------------------------- | ----------------------------- |
+| `login`       | `operationId` of the login operation        | none                          |
+| `loginToken`  | dot path to the token in the login response | `token`                       |
+| `loginScheme` | security scheme the token fills             | the description's only scheme |
+
+```text
+https://mymcp.gmitch215.xyz/https%3A%2F%2Fapi.example.com%2Fopenapi.json/mcp?login=signIn&loginToken=data.jwt
+```
+
+The login request body is `{"username": "...", "password": "..."}`. The password goes only to a
+host the description declares, and the login headers are never forwarded to the API.
+
 ## Client Setup
 
 ### Claude Code
@@ -112,9 +154,16 @@ where MyMCP holds the upstream tokens itself, see [Authorization](#authorization
 claude mcp add --transport http petstore https://mymcp.gmitch215.xyz/petstore/mcp
 
 # with a credential for the upstream API
+claude mcp add --transport http stripe https://mymcp.gmitch215.xyz/stripe/mcp \
+  --header "X-Mcp-Upstream-Authorization: Bearer $STRIPE_SECRET_KEY"
+
+# with a username and password for the login proxy
 claude mcp add --transport http tabroom https://mymcp.gmitch215.xyz/tabroom/mcp \
-  --header "X-Mcp-Upstream-Authorization: Bearer $TABROOM_TOKEN"
+  --header "X-Mcp-Upstream-Login-Username: $TABROOM_USERNAME" \
+  --header "X-Mcp-Upstream-Login-Password: $TABROOM_PASSWORD"
 ```
+
+The shell expands those variables once, so the values are saved in the client's configuration.
 
 Or in `.mcp.json`, which supports `${VAR}` expansion:
 
@@ -133,7 +182,8 @@ Or in `.mcp.json`, which supports `${VAR}` expansion:
 ```
 
 Use `--scope project` to commit the entry for a team, or `--scope user` to make it global. For
-credentials that rotate, `headersHelper` runs a script that prints headers as JSON.
+credentials that rotate, `headersHelper` runs a script that prints headers as JSON. To keep a
+password out of a committed file, reference it as `${TABROOM_PASSWORD}` in `.mcp.json`.
 
 ### Codex CLI
 
@@ -153,7 +203,14 @@ tool_timeout_sec = 120
 ```
 
 `bearer_token_env_var` sets `Authorization`, which MyMCP uses for its own authorization. Upstream
-credentials belong in `http_headers`.
+credentials belong in `http_headers`, or in `env_http_headers`, which reads each value from an
+environment variable:
+
+```toml
+[mcp_servers.tabroom]
+url = "https://mymcp.gmitch215.xyz/tabroom/mcp"
+env_http_headers = { "X-Mcp-Upstream-Login-Username" = "TABROOM_USERNAME", "X-Mcp-Upstream-Login-Password" = "TABROOM_PASSWORD" }
+```
 
 ### Gemini CLI
 

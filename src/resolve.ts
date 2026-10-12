@@ -1,4 +1,5 @@
 import { parse as parseYaml } from 'yaml';
+import type { LoginRecipe } from './auth/login';
 import { extractSpecUrls, looksLikeHtml, serviceDescLinks, wellKnownCandidates } from './discover';
 import type { Env } from './env';
 import { allowedHosts, allowlistOnly, exemptHosts, fetchTimeoutMs, maxSpecBytes } from './env';
@@ -11,7 +12,18 @@ import type { OpenAPI, ToolTable } from './types';
 import { isSwagger2, isValidOpenAPI } from './types';
 import servers from './servers.json';
 
-const ALIASES = servers as Record<string, string>;
+/** a `servers.json` entry: a description URL, optionally with a login recipe */
+export interface AliasEntry {
+	url: string;
+	login?: Partial<LoginRecipe>;
+}
+
+export const ALIASES: Record<string, AliasEntry> = Object.fromEntries(
+	Object.entries(servers as Record<string, string | AliasEntry>).map(([name, entry]) => [
+		name,
+		typeof entry === 'string' ? { url: entry } : entry
+	])
+);
 
 export class ResolveError extends Error {
 	readonly status: number;
@@ -38,7 +50,7 @@ export function resolveServerToken(token: string, env: Env): string {
 	if (!trimmed) throw new ResolveError(400, 'empty_server', 'No server was specified');
 
 	const alias = ALIASES[trimmed];
-	if (alias) return alias;
+	if (alias) return alias.url;
 
 	if (allowlistOnly(env)) {
 		throw new ResolveError(

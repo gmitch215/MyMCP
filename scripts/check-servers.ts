@@ -1,7 +1,7 @@
 import type { Env } from '../src/env';
 import { buildToolTable } from '../src/openapi/tools';
-import { loadSpec } from '../src/resolve';
-import servers from '../src/servers.json';
+import type { AliasEntry } from '../src/resolve';
+import { ALIASES, loadSpec } from '../src/resolve';
 
 /** the same knobs the deployment has, so a cap can be tried here before it is configured */
 const env: Env = {
@@ -27,7 +27,7 @@ interface Outcome {
 
 const CONCURRENCY = 4;
 
-async function check(alias: string, url: string): Promise<Outcome> {
+async function check(alias: string, { url, login }: AliasEntry): Promise<Outcome> {
 	const started = Date.now();
 
 	try {
@@ -51,6 +51,25 @@ async function check(alias: string, url: string): Promise<Outcome> {
 			};
 		}
 
+		if (login) {
+			const missing = [
+				login.operationId && !table.tools.some((t) => t.operationId === login.operationId)
+					? `operation ${login.operationId}`
+					: '',
+				login.scheme && !table.securitySchemes[login.scheme] ? `scheme ${login.scheme}` : ''
+			].filter(Boolean);
+			if (!login.operationId || missing.length > 0) {
+				return {
+					alias,
+					url,
+					ok: false,
+					detail: `login recipe is broken: ${missing.join(', ') || 'no operationId'}`,
+					tools: table.tools.length,
+					ms
+				};
+			}
+		}
+
 		const via = sourceUrl === url ? '' : ` (via ${sourceUrl})`;
 		return {
 			alias,
@@ -72,7 +91,7 @@ async function check(alias: string, url: string): Promise<Outcome> {
 }
 
 async function main(): Promise<void> {
-	const entries = Object.entries(servers as Record<string, string>);
+	const entries = Object.entries(ALIASES);
 	const only = process.argv.slice(2).filter((a) => !a.startsWith('-'));
 	const selected = only.length ? entries.filter(([alias]) => only.includes(alias)) : entries;
 

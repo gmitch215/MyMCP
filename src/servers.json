@@ -1,5 +1,8 @@
 {
-	"tabroom": "https://api.tabroom.com/v1",
+	"tabroom": {
+		"url": "https://api.tabroom.com/v1",
+		"login": { "operationId": "authLogin", "token": "token", "scheme": "cookieAuth" }
+	},
 	"petstore": "https://petstore3.swagger.io/api/v3/openapi.json",
 	"petstore31": "https://petstore31.swagger.io/api/v31/openapi.json",
 	"earth-app": "https://api.earth-app.com/openapi",
