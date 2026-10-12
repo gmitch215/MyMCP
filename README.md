@@ -77,6 +77,12 @@ https://mymcp.gmitch215.xyz/stripe/mcp?tags=Customers&methods=get&max=40
 
 Filters are part of the cache key, so two differently filtered connections do not share a tool list.
 
+Generated output schemas describe a response and never reject one. Specs are often stricter than the
+API behind them, and a client refuses any result that breaks a declared constraint, so `required`,
+`pattern`, `enum`, `format`, bounds and closed objects are dropped while types, properties and
+descriptions stay. A parameter whose name a client would reject, such as `fields[events]`, is exposed
+as `fields_events` and still sent upstream under its original name.
+
 ## Authentication
 
 Credentials for the upstream API travel in their own headers, never in `Authorization`:
@@ -388,6 +394,7 @@ bun run typecheck
 bun run test                # unit tests, hermetic
 bun run test:coverage
 bun run servers:check       # validate every alias in servers.json
+bun run outputs:check       # check live tabroom responses against the advertised output schemas
 bun run evals               # tool-selection evals via local Claude Code
 ```
 

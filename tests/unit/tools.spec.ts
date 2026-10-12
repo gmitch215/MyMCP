@@ -540,3 +540,114 @@ describe('buildToolTable', () => {
 		expect(table.tools[0]!.inputSchema.$defs.Node).toBeDefined();
 	});
 });
+
+describe('output schema relaxation', () => {
+	const strict = {
+		type: 'object',
+		required: ['id', 'label'],
+		additionalProperties: false,
+		properties: {
+			id: { type: 'integer', minimum: 1, maximum: 99 },
+			label: { type: 'string', pattern: '^x', format: 'date-time', enum: ['x1'] },
+			required: { type: 'boolean', description: 'a property that shares a keyword name' },
+			rows: {
+				type: 'object',
+				propertyNames: { pattern: '^\\d+$' },
+				additionalProperties: {
+					type: 'object',
+					required: ['a'],
+					properties: { a: { type: 'string' } }
+				}
+			},
+			tags: { type: 'array', minItems: 1, items: { type: 'string', const: 'k' } },
+			mode: { type: 'string', default: { required: ['kept'] } }
+		}
+	};
+
+	const tool = () =>
+		buildToolTable(
+			makeDoc({
+				paths: {
+					'/x': {
+						get: {
+							operationId: 'getX',
+							responses: {
+								'200': { description: 'ok', content: { 'application/json': { schema: strict } } }
+							}
+						}
+					}
+				}
+			})
+		).tools[0]!;
+
+	it('drops constraints that only reject data and keeps the shape', () => {
+		const out = tool().outputSchema as Record<string, any>;
+		const text = JSON.stringify(out);
+
+		for (const keyword of [
+			'"pattern"',
+			'"format"',
+			'"enum"',
+			'"const"',
+			'"minimum"',
+			'"minItems"'
+		]) {
+			expect(text).not.toContain(keyword);
+		}
+		expect(out.required).toBeUndefined();
+		expect(out.additionalProperties).toBeUndefined();
+		expect(out.properties.rows.propertyNames).toBeUndefined();
+		expect(out.properties.rows.additionalProperties.required).toBeUndefined();
+		expect(out.properties.id.type).toBe('integer');
+		expect(out.properties.tags.items.type).toBe('string');
+	});
+
+	it('keeps a property whose name is a validation keyword, and default values verbatim', () => {
+		const out = tool().outputSchema as Record<string, any>;
+
+		expect(out.properties.required).toEqual({
+			type: 'boolean',
+			description: 'a property that shares a keyword name'
+		});
+		expect(out.properties.mode.default).toEqual({ required: ['kept'] });
+	});
+});
+
+describe('argument names', () => {
+	const table = () =>
+		buildToolTable(
+			makeDoc({
+				paths: {
+					'/tourns': {
+						get: {
+							operationId: 'listTourns',
+							parameters: [
+								{ name: 'fields[events]', in: 'query', schema: { type: 'string' } },
+								{ name: 'filter[state]', in: 'query', schema: { type: 'string' } }
+							],
+							responses: {}
+						}
+					}
+				}
+			})
+		).tools[0]!;
+
+	it('exposes bracketed parameter names under client-safe keys', () => {
+		const tool = table();
+
+		expect(Object.keys(tool.inputSchema.properties as object).sort()).toEqual([
+			'fields_events',
+			'filter_state'
+		]);
+		for (const key of Object.keys(tool.inputSchema.properties as object)) {
+			expect(key).toMatch(/^[a-zA-Z0-9_.-]{1,64}$/);
+		}
+	});
+
+	it('keeps the original name on the wire binding', () => {
+		expect(table().bindings['fields_events']).toMatchObject({
+			in: 'query',
+			name: 'fields[events]'
+		});
+	});
+});

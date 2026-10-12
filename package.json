@@ -12,6 +12,7 @@
 		"test:e2e": "INTEGRATION=1 vitest run",
 		"test:e2e:coverage": "INTEGRATION=1 vitest run --coverage",
 		"servers:check": "bun run scripts/check-servers.ts",
+		"outputs:check": "bun run scripts/check-outputs.ts",
 		"evals": "bun run evals/run.ts",
 		"prettier": "prettier --write .",
 		"prettier:check": "prettier --check .",

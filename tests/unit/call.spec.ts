@@ -305,3 +305,31 @@ describe('conformsShallow', () => {
 		expect(outcome.result.content[0]!.type).toBe('text');
 	});
 });
+
+describe('prepareRequest with sanitized argument names', () => {
+	it('sends the original parameter name even though the tool exposes a safe key', () => {
+		const tool = toolFor(
+			{
+				'/tourns': {
+					get: {
+						operationId: 'listTourns',
+						parameters: [{ name: 'fields[events]', in: 'query', schema: { type: 'string' } }],
+						responses: {}
+					}
+				}
+			},
+			'listTourns'
+		);
+
+		const request = prepareRequest(
+			tool,
+			{ fields_events: 'abbr' },
+			'https://api.test.example',
+			noCredentials
+		);
+
+		expect(decodeURIComponent(request.url)).toBe(
+			'https://api.test.example/tourns?fields[events]=abbr'
+		);
+	});
+});

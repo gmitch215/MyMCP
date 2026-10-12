@@ -35,6 +35,16 @@ function sanitizeToolName(raw: string): string {
 	return cleaned || 'operation';
 }
 
+/** clients accept input keys of [A-Za-z0-9_.-]{1,64}, so `fields[events]` is exposed as `fields_events` */
+function sanitizeArgName(raw: string): string {
+	const cleaned = raw
+		.replace(/[^A-Za-z0-9_.-]+/g, '_')
+		.replace(/_+/g, '_')
+		.replace(/^_+|_+$/g, '')
+		.slice(0, MAX_TOOL_NAME - 12);
+	return cleaned || 'param';
+}
+
 /** truncates to the name cap while leaving room for a dedupe suffix */
 function uniqueToolName(base: string, used: Set<string>): string {
 	let name = base.slice(0, MAX_TOOL_NAME);
@@ -230,10 +240,11 @@ export function buildToolTable(doc: OpenAPI, filter: ToolFilter = {}): ToolTable
 
 			const takenArgs = new Set<string>();
 			const argNameFor = (base: string, location: ParameterLocation | 'body'): string => {
-				let name = nameCount.get(base) === 1 && base !== 'body' ? base : `${base}_${location}`;
+				const safe = sanitizeArgName(base);
+				let name = nameCount.get(base) === 1 && base !== 'body' ? safe : `${safe}_${location}`;
 				if (base === 'body' && location === 'body') name = 'body';
 				let n = 2;
-				while (takenArgs.has(name)) name = `${base}_${location}_${n++}`;
+				while (takenArgs.has(name)) name = `${safe}_${location}_${n++}`;
 				takenArgs.add(name);
 				return name;
 			};
@@ -316,7 +327,7 @@ export function buildToolTable(doc: OpenAPI, filter: ToolFilter = {}): ToolTable
 		}
 	}
 	for (const tool of tools) {
-		if (tool.outputSchema) tool.outputSchema = openObjects(tool.outputSchema) as JsonSchema;
+		if (tool.outputSchema) tool.outputSchema = relaxOutput(tool.outputSchema) as JsonSchema;
 	}
 
 	let filtered = tools.filter((t) => passesFilter(t, filter));
@@ -338,19 +349,56 @@ export function buildToolTable(doc: OpenAPI, filter: ToolFilter = {}): ToolTable
 	};
 }
 
+/** keywords that only reject data; dropped from outputs so a response is described, never refused */
+const VALIDATION_ONLY = new Set([
+	'required',
+	'pattern',
+	'propertyNames',
+	'patternProperties',
+	'format',
+	'enum',
+	'const',
+	'minimum',
+	'maximum',
+	'exclusiveMinimum',
+	'exclusiveMaximum',
+	'multipleOf',
+	'minLength',
+	'maxLength',
+	'minItems',
+	'maxItems',
+	'uniqueItems',
+	'minProperties',
+	'maxProperties'
+]);
+
+const NAME_MAPS = new Set(['properties', '$defs', 'definitions', 'dependentSchemas']);
+
 /**
- * copies a schema without closed-object constraints; specs under-document responses, and
- * clients reject structuredContent carrying an undeclared field
+ * copies a schema keeping its shape (types, properties, items, descriptions) and dropping every
+ * constraint that only rejects data; specs under-document responses, and clients refuse any
+ * structuredContent that breaks a declared constraint
  */
-function openObjects(value: unknown): unknown {
-	if (Array.isArray(value)) return value.map(openObjects);
+function relaxOutput(value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(relaxOutput);
 	if (!value || typeof value !== 'object') return value;
 
 	const out: Record<string, unknown> = {};
 	for (const [key, child] of Object.entries(value)) {
+		if (VALIDATION_ONLY.has(key)) continue;
 		if ((key === 'additionalProperties' || key === 'unevaluatedProperties') && child === false)
 			continue;
-		out[key] = openObjects(child);
+
+		if (key === 'default' || key === 'example' || key === 'examples') {
+			out[key] = child;
+		} else if (NAME_MAPS.has(key) && child && typeof child === 'object' && !Array.isArray(child)) {
+			// keys here are names, not keywords: a property called "required" must survive
+			out[key] = Object.fromEntries(
+				Object.entries(child).map(([name, sub]) => [name, relaxOutput(sub)])
+			);
+		} else {
+			out[key] = relaxOutput(child);
+		}
 	}
 	return out;
 }
