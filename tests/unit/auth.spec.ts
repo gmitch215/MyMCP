@@ -175,6 +175,30 @@ describe('applySecurity', () => {
 		expect(applied.missing).toEqual([]);
 	});
 
+	it('keeps the declared cookie name when the operation declares no security', () => {
+		const supplied = readSuppliedCredentials(
+			headers({ 'X-Mcp-Upstream-Cookie-TabroomToken': 'secret' })
+		);
+		const applied = applySecurity(schemes, [], supplied);
+
+		expect(applied.cookies).toEqual({ TabroomToken: 'secret' });
+	});
+
+	it('keeps declared query and cookie names when forwarding an unsatisfied requirement', () => {
+		const supplied = readSuppliedCredentials(
+			headers({
+				'X-Mcp-Upstream-Query-API_KEY': 'q',
+				'X-Mcp-Upstream-Cookie-TabroomToken': 'c',
+				'X-Mcp-Upstream-Cookie-Other': 'o'
+			})
+		);
+		const applied = applySecurity(schemes, [{ bearerAuth: [] }], supplied);
+
+		expect(applied.missing).toEqual(['bearerAuth']);
+		expect(applied.query).toEqual({ api_key: 'q' });
+		expect(applied.cookies).toEqual({ TabroomToken: 'c', other: 'o' });
+	});
+
 	it('forwards unmatched upstream headers as an escape hatch', () => {
 		const supplied = readSuppliedCredentials(headers({ 'X-Mcp-Upstream-X-Tenant': 'acme' }));
 		expect(applySecurity(schemes, [], supplied).headers['X-Tenant']).toBe('acme');

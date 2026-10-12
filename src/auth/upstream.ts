@@ -122,9 +122,7 @@ export function applySecurity(
 	for (const [name, value] of supplied.headers) applied.headers[name] = value;
 
 	if (requirements.length === 0) {
-		if (supplied.authorization) applied.headers['Authorization'] = supplied.authorization;
-		for (const [name, value] of supplied.query) applied.query[name] = value;
-		for (const [name, value] of supplied.cookies) applied.cookies[name] = value;
+		forwardSupplied(schemes, supplied, applied);
 		return applied;
 	}
 
@@ -167,11 +165,33 @@ export function applySecurity(
 	applied.missing = [...new Set(unsatisfied)];
 
 	// still forward what was supplied; the upstream is the authority on whether it suffices
-	if (supplied.authorization) applied.headers['Authorization'] = supplied.authorization;
-	for (const [name, value] of supplied.query) applied.query[name] = value;
-	for (const [name, value] of supplied.cookies) applied.cookies[name] = value;
+	forwardSupplied(schemes, supplied, applied);
 
 	return applied;
+}
+
+/** forwards supplied credentials as-is, restoring a declared apiKey name's case (headers lowercase it) */
+function forwardSupplied(
+	schemes: Record<string, SecurityScheme>,
+	supplied: SuppliedCredentials,
+	applied: AppliedCredentials
+): void {
+	const declared = (location: 'query' | 'cookie', name: string): string => {
+		const lower = name.toLowerCase();
+		for (const scheme of Object.values(schemes)) {
+			if (
+				scheme.type === 'apiKey' &&
+				scheme.in === location &&
+				scheme.name?.toLowerCase() === lower
+			)
+				return scheme.name;
+		}
+		return name;
+	};
+
+	if (supplied.authorization) applied.headers['Authorization'] = supplied.authorization;
+	for (const [name, value] of supplied.query) applied.query[declared('query', name)] = value;
+	for (const [name, value] of supplied.cookies) applied.cookies[declared('cookie', name)] = value;
 }
 
 function applyScheme(
