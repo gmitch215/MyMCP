@@ -27,7 +27,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Cache docker images
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /tmp/docker-images
           key: docker-images-${{ hashFiles('docker/compose.yml') }}
