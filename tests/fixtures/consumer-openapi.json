@@ -1,0 +1,30 @@
+{
+	"openapi": "3.1.0",
+	"info": {
+		"title": "Consumer Fixture API",
+		"version": "1.0.0",
+		"description": "A small description used to test the npm package entry."
+	},
+	"servers": [{ "url": "https://api.consumer.example/v1" }],
+	"paths": {
+		"/items": {
+			"get": {
+				"operationId": "listItems",
+				"tags": ["items"],
+				"summary": "List items",
+				"responses": { "200": { "description": "The items" } }
+			}
+		},
+		"/items/{itemId}": {
+			"get": {
+				"operationId": "getItem",
+				"tags": ["items"],
+				"summary": "Get one item",
+				"parameters": [
+					{ "name": "itemId", "in": "path", "required": true, "schema": { "type": "string" } }
+				],
+				"responses": { "200": { "description": "The item" } }
+			}
+		}
+	}
+}

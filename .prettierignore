@@ -5,5 +5,7 @@ package-lock.json
 LICENSE
 tsconfig.json
 coverage/
+dist/
 test-report.junit.xml
 docker/specs/
+tests/fixtures/malformed/

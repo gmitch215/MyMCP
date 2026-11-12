@@ -13,7 +13,7 @@
 		"noFallthroughCasesInSwitch": true,
 		"resolveJsonModule": true,
 		"lib": ["ESNext"],
-		"types": ["@cloudflare/workers-types", "@types/bun"]
+		"types": ["@cloudflare/workers-types"]
 	},
-	"include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "evals/**/*.ts", "vitest.config.mts"]
+	"include": ["src/**/*.ts", "tests/**/*.ts", "scripts/check-*.ts", "evals/**/*.ts", "vitest.config.mts"]
 }

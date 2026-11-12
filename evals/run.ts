@@ -1,9 +1,13 @@
+import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { promisify } from 'node:util';
 import { buildToolTable } from '../src/openapi/tools';
 import { normalizeSpec } from '../src/resolve';
 import type { ToolDefinition } from '../src/types';
 import { CASES, PASS_THRESHOLD } from './cases';
 import type { EvalCase } from './cases';
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Scores whether a model can pick the right tool and fill its arguments from the schemas MyMCP
@@ -54,19 +58,15 @@ function buildPrompt(tools: ToolDefinition[], request: string): string {
 }
 
 async function ask(prompt: string): Promise<Choice | undefined> {
-	const proc = Bun.spawn(['claude', '-p', '--model', MODEL, prompt], {
-		stdout: 'pipe',
-		stderr: 'pipe'
-	});
-
-	const [stdout, stderr, code] = await Promise.all([
-		new Response(proc.stdout).text(),
-		new Response(proc.stderr).text(),
-		proc.exited
-	]);
-
-	if (code !== 0) {
-		console.error(`  claude exited ${code}: ${stderr.trim().slice(0, 300)}`);
+	let stdout: string;
+	try {
+		({ stdout } = await execFileAsync('claude', ['-p', '--model', MODEL, prompt]));
+	} catch (error) {
+		const failure = error as { code?: unknown; stderr?: string };
+		if (typeof failure.code !== 'number') throw error;
+		console.error(
+			`  claude exited ${failure.code}: ${(failure.stderr ?? '').trim().slice(0, 300)}`
+		);
 		return undefined;
 	}
 

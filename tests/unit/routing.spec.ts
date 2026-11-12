@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import worker, { splitPath } from '../../src/index';
+import lib from '../../src/lib';
 import type { Env } from '../../src/env';
+import { allowlistOnly, authEnabled, maxResponseBytes, maxSpecBytes } from '../../src/env';
 import { clearToolTableCache } from '../../src/resolve';
 import { SCALAR_PAGE, mcpHeaders, rpc, stubFetch } from '../helpers';
+import consumerSpec from '../fixtures/consumer-openapi.json';
 
 const SPEC = JSON.stringify({
 	openapi: '3.1.0',
@@ -56,6 +59,134 @@ describe('splitPath', () => {
 
 	it('returns undefined for the root path', () => {
 		expect(splitPath('/')).toBeUndefined();
+	});
+});
+
+describe('endpoint matrix', () => {
+	const SPEC_ENC = encodeURIComponent('https://api.demo.example/openapi.json');
+	const base = `https://mymcp.test/${SPEC_ENC}`;
+
+	beforeEach(() => clearToolTableCache());
+	afterEach(() => clearToolTableCache());
+
+	it('answers a preflight with CORS headers', async () => {
+		const response = await call(`${base}/mcp`, { method: 'OPTIONS' });
+
+		expect(response.status).toBe(204);
+		expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*');
+	});
+
+	it('treats a POST to the SSE path as Streamable HTTP', async () => {
+		stubFetch({ 'https://api.demo.example/openapi.json': { body: SPEC } });
+
+		const response = await call(`${base}/sse`, {
+			method: 'POST',
+			headers: mcpHeaders('tools/list'),
+			body: rpc('tools/list')
+		});
+
+		expect(response.status).toBe(200);
+	});
+
+	it('answers 405 to GET on the SSE path when the Durable Object is not bound', async () => {
+		expect((await call(`${base}/sse`)).status).toBe(405);
+	});
+
+	it('rejects other methods on the SSE path', async () => {
+		expect((await call(`${base}/sse`, { method: 'PUT' })).status).toBe(405);
+	});
+
+	it('rejects GET on the message endpoint', async () => {
+		expect((await call(`${base}/messages`)).status).toBe(405);
+	});
+
+	it('requires a sessionId on the message endpoint once the Durable Object is bound', async () => {
+		const bound = { MCP_SSE: {} as unknown as DurableObjectNamespace } as Env;
+		const response = await worker.fetch(
+			new Request(`${base}/messages`, { method: 'POST', body: '{}' }),
+			bound,
+			ctx
+		);
+
+		expect(response.status).toBe(400);
+	});
+
+	it('reports the message endpoint as unavailable without the Durable Object', async () => {
+		const response = await call(`${base}/messages?sessionId=abc`, { method: 'POST', body: '{}' });
+
+		expect(response.status).toBe(405);
+	});
+
+	it('lists the valid endpoints for an unknown path under a server', async () => {
+		const response = await call(`${base}/nope`);
+		const body = (await response.json()) as { endpoints: string[] };
+
+		expect(response.status).toBe(404);
+		expect(body.endpoints).toHaveLength(3);
+	});
+
+	it('serves the landing document at the root', async () => {
+		const body = (await (await call('https://mymcp.test/')).json()) as { name: string };
+
+		expect(body.name).toBe('MyMCP');
+	});
+
+	it('answers 404 for a favicon when no assets are bound', async () => {
+		expect((await call('https://mymcp.test/favicon.ico')).status).toBe(404);
+	});
+
+	it('refuses /connect without a signed-in principal', async () => {
+		const response = await call('https://mymcp.test/connect?server=petstore&scheme=oauth');
+
+		expect(response.status).toBe(401);
+	});
+});
+
+describe('environment defaults', () => {
+	it('uses a 12 MB spec cap and a 2 MB response cap by default', () => {
+		expect(maxSpecBytes({})).toBe(12 * 1024 * 1024);
+		expect(maxResponseBytes({})).toBe(2 * 1024 * 1024);
+	});
+
+	it('falls back to the default when a cap is not a positive number', () => {
+		expect(maxSpecBytes({ MAX_SPEC_BYTES: '-5' })).toBe(12 * 1024 * 1024);
+		expect(maxResponseBytes({ MAX_RESPONSE_BYTES: 'many' })).toBe(2 * 1024 * 1024);
+	});
+
+	it('treats AUTH_PROVIDER=none as no authorization', () => {
+		expect(authEnabled({ AUTH_PROVIDER: 'none' })).toBe(false);
+		expect(authEnabled({ AUTH_PROVIDER: 'selfhosted' })).toBe(true);
+	});
+
+	it('reads ALLOWLIST_ONLY as a switch', () => {
+		expect(allowlistOnly({ ALLOWLIST_ONLY: '1' })).toBe(true);
+		expect(allowlistOnly({ ALLOWLIST_ONLY: 'true' })).toBe(true);
+		expect(allowlistOnly({ ALLOWLIST_ONLY: '0' })).toBe(false);
+	});
+});
+
+describe('package entry', () => {
+	it('exposes the same handler the worker serves', () => {
+		expect(lib.fetch).toBe(worker.fetch);
+	});
+
+	it('lists tools from a description through the entry a consumer imports', async () => {
+		stubFetch({
+			'https://api.consumer.example/openapi.json': { body: JSON.stringify(consumerSpec) }
+		});
+		const encoded = encodeURIComponent('https://api.consumer.example/openapi.json');
+		const response = await lib.fetch(
+			new Request(`https://mymcp.test/${encoded}/mcp`, {
+				method: 'POST',
+				headers: mcpHeaders('tools/list'),
+				body: rpc('tools/list')
+			}),
+			env,
+			ctx
+		);
+		const body = (await response.json()) as { result?: { tools?: { name: string }[] } };
+
+		expect((body.result?.tools ?? []).map((t) => t.name).sort()).toEqual(['getItem', 'listItems']);
 	});
 });
 

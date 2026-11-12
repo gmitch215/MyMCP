@@ -1,11 +1,36 @@
 {
-	"private": true,
 	"name": "@gmitch215/mymcp",
+	"version": "1.0.0",
 	"description": "Custom MCP servers from any API",
+	"type": "module",
+	"license": "MPL-2.0",
+	"author": "Gregory Mitchell",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/gmitch215/MyMCP.git"
+	},
+	"bugs": {
+		"url": "https://github.com/gmitch215/MyMCP/issues"
+	},
+	"homepage": "https://github.com/gmitch215/MyMCP#readme",
+	"types": "./dist/lib.d.ts",
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/lib.d.ts",
+			"import": "./dist/lib.js"
+		}
+	},
 	"scripts": {
+		"build": "bun run scripts/build.ts",
+		"prepack": "bun run build",
 		"dev": "bunx wrangler dev --port 8787",
 		"deploy": "bunx wrangler deploy",
-		"typecheck": "tsc --noEmit",
+		"typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
@@ -21,6 +46,9 @@
 	"dependencies": {
 		"yaml": "^2.8.1"
 	},
+	"peerDependencies": {
+		"@cloudflare/workers-types": ">=5"
+	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.22.0",
 		"@cloudflare/workers-types": "^5.20260908.1",
@@ -30,6 +58,7 @@
 		"husky": "^9.1.7",
 		"lint-staged": "^16.4.0",
 		"prettier": "^3.9.6",
+		"typescript": "^6.0.3",
 		"vitest": "^4.1.10",
 		"wrangler": "^4.130.0"
 	},
