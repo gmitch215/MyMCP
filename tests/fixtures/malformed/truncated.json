@@ -1,0 +1,6 @@
+{
+	"openapi": "3.1.0",
+	"info": { "title": "Cut off", "version": "1.0.0" },
+	"paths": {
+		"/a": {
+			"get": { "operationId": "a"

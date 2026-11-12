@@ -157,13 +157,15 @@ function successSchema(
 	if (!media?.schema) return undefined;
 
 	const resolved = resolver.resolve(media.schema);
-	const kind = resolved.type;
+	// a recursive component resolves to a bare $ref into $defs, so judge the component itself
+	const declared = deref<JsonSchema>(resolver, media.schema) ?? resolved;
+	const kind = declared.type;
 	const structural =
 		kind === 'object' ||
 		kind === 'array' ||
 		(Array.isArray(kind) && (kind.includes('object') || kind.includes('array'))) ||
-		!!resolved.properties ||
-		!!resolved.items;
+		!!declared.properties ||
+		!!declared.items;
 
 	return structural ? resolved : undefined;
 }

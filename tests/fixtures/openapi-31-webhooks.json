@@ -1,0 +1,12 @@
+{
+	"openapi": "3.1.0",
+	"info": { "title": "Events", "version": "1.0.0" },
+	"webhooks": {
+		"orderPaid": {
+			"post": {
+				"operationId": "orderPaid",
+				"responses": { "200": { "description": "acknowledged" } }
+			}
+		}
+	}
+}

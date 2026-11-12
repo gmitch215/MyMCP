@@ -1,0 +1,79 @@
+openapi: 3.0.3
+info:
+  title: Stores
+  version: 1.0.0
+servers:
+  - url: https://{region}.stores.example.com/v1
+    variables:
+      region:
+        default: eu
+        enum: [eu, us]
+paths:
+  /stores:
+    get:
+      operationId: listStores
+      tags: [stores]
+      security:
+        - bearer: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, maximum: 100 }
+        - name: X-Request-Id
+          in: header
+          schema: { type: string }
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stores:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Store'
+  /stores/{storeId}:
+    parameters:
+      - name: storeId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getStore
+      tags: [stores]
+      security:
+        - queryKey: []
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Store'
+    delete:
+      operationId: deleteStore
+      tags: [stores]
+      responses:
+        '204':
+          description: deleted
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+    queryKey:
+      type: apiKey
+      in: query
+      name: api_key
+  schemas:
+    Store:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: string
+        closedAt:
+          type: string
+          nullable: true

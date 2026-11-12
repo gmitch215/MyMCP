@@ -1,0 +1,6 @@
+{
+	"info": { "title": "No version field" },
+	"paths": {
+		"/a": { "get": { "operationId": "a", "responses": {} } }
+	}
+}

@@ -1,0 +1,19 @@
+{
+	"openapi": "3.1.0",
+	"info": { "title": "Shapes", "version": "1.0.0" },
+	"servers": [{ "url": "https://api.shapes.example.com" }],
+	"paths": {
+		"/a": "not an operation object",
+		"/b": { "get": null },
+		"/c": {
+			"get": { "operationId": "badParameters", "parameters": "nope", "responses": {} }
+		},
+		"/d": {
+			"post": {
+				"operationId": "badSchema",
+				"requestBody": { "content": { "application/json": { "schema": 7 } } },
+				"responses": {}
+			}
+		}
+	}
+}

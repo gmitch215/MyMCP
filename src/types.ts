@@ -143,8 +143,9 @@ export function isValidOpenAPI(obj: unknown): obj is OpenAPI {
 	const info = doc.info as Record<string, unknown>;
 	if (typeof info.title !== 'string' || !info.title) return false;
 
-	const hasPaths = !!doc.paths && typeof doc.paths === 'object';
-	const hasWebhooks = !!doc.webhooks && typeof doc.webhooks === 'object';
+	const isMap = (value: unknown) => !!value && typeof value === 'object' && !Array.isArray(value);
+	const hasPaths = isMap(doc.paths);
+	const hasWebhooks = isMap(doc.webhooks);
 	return hasPaths || hasWebhooks;
 }
 

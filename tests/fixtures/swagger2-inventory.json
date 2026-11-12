@@ -1,0 +1,67 @@
+{
+	"swagger": "2.0",
+	"info": { "title": "Inventory", "version": "2.1.0" },
+	"host": "inventory.example.com",
+	"basePath": "/v2",
+	"schemes": ["https"],
+	"consumes": ["application/json"],
+	"produces": ["application/json"],
+	"securityDefinitions": {
+		"apiKey": { "type": "apiKey", "name": "X-Api-Key", "in": "header" }
+	},
+	"security": [{ "apiKey": [] }],
+	"paths": {
+		"/items": {
+			"get": {
+				"operationId": "listItems",
+				"tags": ["items"],
+				"parameters": [
+					{
+						"name": "ids",
+						"in": "query",
+						"type": "array",
+						"items": { "type": "string" },
+						"collectionFormat": "csv"
+					}
+				],
+				"responses": {
+					"200": {
+						"description": "ok",
+						"schema": { "type": "array", "items": { "$ref": "#/definitions/Item" } }
+					}
+				}
+			},
+			"post": {
+				"operationId": "createItem",
+				"tags": ["items"],
+				"parameters": [
+					{
+						"name": "item",
+						"in": "body",
+						"required": true,
+						"schema": { "$ref": "#/definitions/Item" }
+					}
+				],
+				"responses": { "201": { "description": "created" } }
+			}
+		},
+		"/items/{itemId}": {
+			"delete": {
+				"operationId": "deleteItem",
+				"tags": ["items"],
+				"parameters": [{ "name": "itemId", "in": "path", "required": true, "type": "string" }],
+				"responses": { "204": { "description": "removed" } }
+			}
+		}
+	},
+	"definitions": {
+		"Item": {
+			"type": "object",
+			"required": ["name"],
+			"properties": {
+				"name": { "type": "string" },
+				"quantity": { "type": "integer", "minimum": 0 }
+			}
+		}
+	}
+}

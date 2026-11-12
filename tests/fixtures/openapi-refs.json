@@ -1,0 +1,46 @@
+{
+	"openapi": "3.1.0",
+	"info": { "title": "Refs", "version": "1.0.0" },
+	"paths": {
+		"/nodes/{nodeId}": {
+			"get": {
+				"operationId": "getNode",
+				"parameters": [{ "$ref": "#/components/parameters/NodeId" }],
+				"responses": { "200": { "$ref": "#/components/responses/NodeResponse" } }
+			}
+		},
+		"/nodes": {
+			"post": {
+				"operationId": "createNode",
+				"requestBody": {
+					"content": {
+						"application/json": { "schema": { "$ref": "#/components/schemas/Node" } }
+					}
+				},
+				"responses": { "201": { "description": "created" } }
+			}
+		}
+	},
+	"components": {
+		"parameters": {
+			"NodeId": { "name": "nodeId", "in": "path", "required": true, "schema": { "type": "string" } }
+		},
+		"responses": {
+			"NodeResponse": {
+				"description": "ok",
+				"content": {
+					"application/json": { "schema": { "$ref": "#/components/schemas/Node" } }
+				}
+			}
+		},
+		"schemas": {
+			"Node": {
+				"type": "object",
+				"properties": {
+					"id": { "type": "string" },
+					"children": { "type": "array", "items": { "$ref": "#/components/schemas/Node" } }
+				}
+			}
+		}
+	}
+}

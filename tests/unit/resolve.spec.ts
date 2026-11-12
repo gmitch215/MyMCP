@@ -12,6 +12,17 @@ import {
 	resolveServerToken
 } from '../../src/resolve';
 import { stubFetch } from '../helpers';
+import { buildToolTable } from '../../src/openapi/tools';
+import refsSpec from '../fixtures/openapi-refs.json';
+import swaggerInventory from '../fixtures/swagger2-inventory.json';
+import webhooksOnly from '../fixtures/openapi-31-webhooks.json';
+import storesYaml from '../fixtures/openapi-30-stores.yaml?raw';
+import badIndentYaml from '../fixtures/malformed/bad-indent.yaml?raw';
+import errorPage from '../fixtures/malformed/error-page.html?raw';
+import truncatedJson from '../fixtures/malformed/truncated.json?raw';
+import noVersion from '../fixtures/malformed/no-version.json';
+import shapes from '../fixtures/malformed/shapes.json';
+import unresolvedRef from '../fixtures/malformed/unresolved-ref.json';
 
 const env: Env = {};
 
@@ -223,6 +234,127 @@ describe('resolveBaseUrl', () => {
 			servers: [{ url: 'https://{region}.api.example', variables: { region: { default: 'eu' } } }]
 		};
 		expect(resolveBaseUrl(varied, 'https://x.example/spec')).toBe('https://eu.api.example');
+	});
+});
+
+describe('library fixtures', () => {
+	beforeEach(() => clearToolTableCache());
+	afterEach(() => clearToolTableCache());
+
+	const url = (name: string) => `https://fixtures.example/${name}`;
+
+	it('builds the tools for a Swagger 2.0 description', async () => {
+		stubFetch({ [url('inventory.json')]: { body: JSON.stringify(swaggerInventory) } });
+		const { table } = await getToolTable(url('inventory.json'), {}, env);
+
+		expect(table.tools.map((t) => t.name).sort()).toEqual([
+			'createItem',
+			'deleteItem',
+			'listItems'
+		]);
+	});
+
+	it('builds the tools for a YAML 3.0 description with a templated server and path-level parameters', async () => {
+		stubFetch({
+			[url('stores.yaml')]: { body: storesYaml, headers: { 'Content-Type': 'application/yaml' } }
+		});
+		const { table } = await getToolTable(url('stores.yaml'), {}, env);
+
+		expect(table.tools.map((t) => t.name).sort()).toEqual([
+			'deleteStore',
+			'getStore',
+			'listStores'
+		]);
+		const getStore = table.byName.get('getStore');
+		expect(getStore?.inputSchema.properties).toHaveProperty('storeId');
+	});
+
+	it('accepts a webhooks-only 3.1 description and exposes no callable tools', async () => {
+		stubFetch({ [url('events.json')]: { body: JSON.stringify(webhooksOnly) } });
+		const { table } = await getToolTable(url('events.json'), {}, env);
+
+		expect(table.tools).toHaveLength(0);
+	});
+
+	it('resolves $ref parameters, responses and self-referential schemas', async () => {
+		stubFetch({ [url('refs.json')]: { body: JSON.stringify(refsSpec) } });
+		const { table } = await getToolTable(url('refs.json'), {}, env);
+
+		expect(table.tools.map((t) => t.name).sort()).toEqual(['createNode', 'getNode']);
+		const getNode = table.byName.get('getNode');
+		expect(getNode?.inputSchema.properties).toHaveProperty('nodeId');
+		expect(getNode?.outputSchema).toBeDefined();
+		expect(JSON.stringify(getNode?.outputSchema)).toContain('"id"');
+	});
+});
+
+describe('malformed descriptions', () => {
+	beforeEach(() => clearToolTableCache());
+	afterEach(() => clearToolTableCache());
+
+	const url = (name: string) => `https://malformed.example/${name}`;
+
+	it('answers 422 for a body that is cut off mid-object', async () => {
+		stubFetch({ [url('truncated.json')]: { body: truncatedJson } });
+
+		await expect(loadSpec(url('truncated.json'), env)).rejects.toMatchObject({
+			status: 422,
+			reason: 'not_openapi'
+		});
+	});
+
+	it('answers 422 for YAML that does not parse', async () => {
+		stubFetch({
+			[url('bad.yaml')]: { body: badIndentYaml, headers: { 'Content-Type': 'application/yaml' } }
+		});
+
+		await expect(loadSpec(url('bad.yaml'), env)).rejects.toMatchObject({ status: 422 });
+	});
+
+	it('answers 422 for an HTML error page that links no description', async () => {
+		stubFetch({ [url('down')]: { body: errorPage, headers: { 'Content-Type': 'text/html' } } });
+
+		await expect(loadSpec(url('down'), env)).rejects.toMatchObject({ status: 422 });
+	});
+
+	it('answers 422 for a document without an openapi version field', async () => {
+		stubFetch({ [url('no-version.json')]: { body: JSON.stringify(noVersion) } });
+
+		await expect(loadSpec(url('no-version.json'), env)).rejects.toMatchObject({ status: 422 });
+	});
+
+	it('rejects a paths value that is an array rather than a map', () => {
+		expect(normalizeSpec({ openapi: '3.1.0', info: { title: 'T' }, paths: [] })).toBeUndefined();
+	});
+
+	it('rejects a description without info.title', () => {
+		expect(normalizeSpec({ openapi: '3.1.0', info: { version: '1' }, paths: {} })).toBeUndefined();
+	});
+
+	it('degrades malformed operations to the ones it can read, without throwing', async () => {
+		stubFetch({ [url('shapes.json')]: { body: JSON.stringify(shapes) } });
+		const { table } = await getToolTable(url('shapes.json'), {}, env);
+
+		expect(table.tools.map((t) => t.name).sort()).toEqual(['badParameters', 'badSchema']);
+	});
+
+	it('keeps a tool whose response $ref does not resolve, with no output schema', async () => {
+		stubFetch({ [url('dangling.json')]: { body: JSON.stringify(unresolvedRef) } });
+		const { table } = await getToolTable(url('dangling.json'), {}, env);
+
+		expect(table.byName.get('lookup')?.outputSchema).toBeUndefined();
+	});
+
+	it('does not read a Swagger 1.2 document as Swagger 2.0', () => {
+		expect(
+			normalizeSpec({ swagger: '1.2', info: { title: 'Legacy', version: '1' }, apis: [] })
+		).toBeUndefined();
+	});
+
+	it('builds a tool table from a normalised document without throwing', () => {
+		const doc = normalizeSpec(shapes);
+		expect(doc).toBeDefined();
+		expect(() => buildToolTable(doc!)).not.toThrow();
 	});
 });
 
