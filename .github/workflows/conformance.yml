@@ -46,9 +46,15 @@ jobs:
             --method tools/list --strict --format json > /tmp/tools.json
       - name: Call a tool through the inspector
         run: |
+          set +e
           bunx --bun @modelcontextprotocol/inspector@2 --cli \
             --transport http --server-url http://127.0.0.1:8787/petstore/mcp \
-            --method tools/call --tool-name getInventory --format json
+            --method tools/call --tool-name getInventory --format json > /tmp/call.json
+          status=$?
+          set -e
+          # exit 5 means the upstream answered with an error; the MCP round trip still has to be well formed
+          if [ "$status" -ne 0 ] && [ "$status" -ne 5 ]; then exit "$status"; fi
+          jq -e '.result.content | type == "array"' /tmp/call.json
       - name: Read the description resource
         run: |
           bunx --bun @modelcontextprotocol/inspector@2 --cli \
