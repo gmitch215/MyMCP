@@ -1,4 +1,3 @@
-import { cloudflareTest } from '@cloudflare/vitest-pool-workers';
 import { defineConfig } from 'vitest/config';
 
 const integration = process.env.INTEGRATION === '1';
@@ -18,16 +17,5 @@ export default defineConfig({
 			include: ['src/**/*.ts'],
 			exclude: ['tests/**']
 		}
-	},
-	plugins: [
-		cloudflareTest({
-			remoteBindings: false,
-			wrangler: { configPath: './tests/wrangler.jsonc' },
-			miniflare: {
-				compatibilityDate: '2026-08-22',
-				kvNamespaces: ['MYMCP_KV'],
-				bindings: { STATE_SECRET: 'test-secret-value-for-sealing-state' }
-			}
-		})
-	]
+	}
 });

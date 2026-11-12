@@ -1,5 +1,24 @@
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { vi } from 'vitest';
+import { getPlatformProxy } from 'wrangler';
+import type { Env } from '../src/env';
 import type { OpenAPI } from '../src/types';
+
+/**
+ * The Workers bindings the unit tests run against: a local KV namespace and the sealing secret.
+ * Each call gets its own persistence directory so files cannot see each other's state.
+ */
+export async function openTestEnv(): Promise<Env> {
+	const persist = await mkdtemp(join(tmpdir(), 'mymcp-test-'));
+	const proxy = await getPlatformProxy<Env>({
+		configPath: 'tests/wrangler.jsonc',
+		persist: { path: persist },
+		remoteBindings: false
+	});
+	return proxy.env;
+}
 
 export function makeDoc(partial: Partial<OpenAPI> = {}): OpenAPI {
 	return {

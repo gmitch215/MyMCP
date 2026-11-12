@@ -1,4 +1,3 @@
-import { env as testEnv } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadUpstreamCredentials } from '../../src/auth/resource';
 import { clearJwksCache } from '../../src/auth/jwt';
@@ -6,7 +5,9 @@ import type { Env } from '../../src/env';
 import worker from '../../src/index';
 import { clearToolTableCache } from '../../src/resolve';
 import { toBase64Url } from '../../src/state';
-import { stubFetch } from '../helpers';
+import { openTestEnv, stubFetch } from '../helpers';
+
+const testEnv = await openTestEnv();
 
 const ISSUER = 'https://auth.example.com';
 const JWKS_URL = `${ISSUER}/jwks`;
@@ -87,7 +88,7 @@ async function token(resource: string): Promise<string> {
 }
 
 const authEnv = (): Env => ({
-	...(testEnv as unknown as Env),
+	...testEnv,
 	AUTH_PROVIDER: 'oidc',
 	AUTH_ISSUER: ISSUER,
 	AUTH_JWKS_URL: JWKS_URL,

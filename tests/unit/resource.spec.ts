@@ -1,4 +1,3 @@
-import { env as testEnv } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getIdentityProvider } from '../../src/auth/identity';
 import { clearJwksCache, scopesOf, verifyJwt } from '../../src/auth/jwt';
@@ -17,9 +16,11 @@ import type { Env } from '../../src/env';
 import worker from '../../src/index';
 import { toBase64Url } from '../../src/state';
 import { clearToolTableCache } from '../../src/resolve';
-import { stubFetch } from '../helpers';
+import { openTestEnv, stubFetch } from '../helpers';
 
-const kvEnv = testEnv as unknown as Env;
+const testEnv = await openTestEnv();
+
+const kvEnv: Env = testEnv;
 const ctx = {
 	waitUntil: () => undefined,
 	passThroughOnException: () => undefined

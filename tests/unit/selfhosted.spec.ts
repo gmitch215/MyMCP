@@ -1,16 +1,17 @@
-import { env as testEnv } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getIdentityProvider } from '../../src/auth/identity';
 import type { Env } from '../../src/env';
 import { toBase64Url } from '../../src/state';
-import { stubFetch } from '../helpers';
+import { openTestEnv, stubFetch } from '../helpers';
+
+const testEnv = await openTestEnv();
 
 const CLIENT_ID = 'https://client.example/metadata.json';
 const REDIRECT_URI = 'https://client.example/callback';
 const ISSUER = 'https://mymcp.test';
 
 const env: Env = {
-	...(testEnv as unknown as Env),
+	...testEnv,
 	AUTH_PROVIDER: 'selfhosted',
 	AUTH_ISSUER: ISSUER,
 	SELFHOST_PASSWORD: 'correct horse battery staple'

@@ -2,5 +2,7 @@
 	"$schema": "../node_modules/wrangler/config-schema.json",
 	"name": "mymcp-test",
 	"main": "../src/index.ts",
-	"compatibility_date": "2026-08-22"
+	"compatibility_date": "2026-08-22",
+	"kv_namespaces": [{ "binding": "MYMCP_KV", "id": "test-kv" }],
+	"vars": { "STATE_SECRET": "test-secret-value-for-sealing-state" }
 }
