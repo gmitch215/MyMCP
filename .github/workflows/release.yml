@@ -1,0 +1,156 @@
+name: Release Project
+
+on:
+  workflow_dispatch:
+    inputs:
+      changelog:
+        type: string
+        description: 'Changelog to replace the auto-generated one'
+      skip_npm:
+        type: boolean
+        description: 'Skip npmjs'
+        default: false
+
+jobs:
+  verify:
+    name: Verify the Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 'latest'
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun run typecheck
+      - name: Check formatting
+        run: bun run prettier:check
+      - name: Unit Suite
+        run: bun run test
+      - name: Build
+        run: bun run build
+
+  release:
+    name: Tag and Release
+    runs-on: ubuntu-latest
+    needs: verify
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Extract Version from package.json
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Extracted Version: $VERSION"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "undefined" ]; then
+            echo "package.json has no version field; the tag would be 'vundefined'." >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Retrieve Latest Tag
+        run: |
+          echo "LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo '')" >> "$GITHUB_ENV"
+      - name: Generate Changelog
+        if: ${{ github.event.inputs.changelog == '' }}
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v6
+        with:
+          configuration: '.github/release.json'
+          mode: 'HYBRID'
+          fromTag: '${{ env.LATEST_TAG }}'
+          toTag: '${{ github.ref_name }}'
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: MyMCP v${{ env.VERSION }}
+          body: ${{ steps.changelog.outputs.changelog || github.event.inputs.changelog }}
+          draft: false
+          prerelease: ${{ github.ref_name != 'master' }}
+
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    needs: release
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Read the Version and the Package Name
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          PACKAGE=$(node -p "require('./package.json').name")
+          if [ -z "$VERSION" ] || [ "$VERSION" = "undefined" ]; then
+            echo "package.json has no version field." >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "PACKAGE=$PACKAGE" >> "$GITHUB_ENV"
+          echo "TAG=v${VERSION}" >> "$GITHUB_ENV"
+      - name: Refuse to Publish an Untagged Version
+        run: |
+          if ! git rev-parse -q --verify "refs/tags/${TAG}" > /dev/null; then
+            echo "::error::${TAG} does not exist, so the release job did not create it. Refusing to publish an untagged version." >&2
+            exit 1
+          fi
+          echo "Publishing against ${TAG}."
+      - name: Set up Bun
+        if: ${{ !inputs.skip_npm }}
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 'latest'
+      - name: Install Dependencies
+        if: ${{ !inputs.skip_npm }}
+        run: bun install --frozen-lockfile
+      - name: Build
+        if: ${{ !inputs.skip_npm }}
+        run: bun run build
+      - name: Set up Node for npm
+        if: ${{ !inputs.skip_npm }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Check Whether the Version Is Already on npm
+        if: ${{ !inputs.skip_npm }}
+        id: published
+        run: |
+          VERSIONS=$(npm view "$PACKAGE" versions --json 2>/dev/null || echo '[]')
+          if echo "$VERSIONS" | grep -q "\"${VERSION}\""; then
+            echo "${PACKAGE}@${VERSION} is already on the registry; skipping so a re-run is idempotent."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish to npm
+        if: ${{ !inputs.skip_npm && steps.published.outputs.skip == 'false' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public --provenance --ignore-scripts
+      - name: npm to Job Summary
+        if: ${{ always() && !inputs.skip_npm }}
+        run: |
+          echo "## npm publish" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Package: \`${PACKAGE}@${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.published.outputs.skip }}" = "true" ]; then
+            echo "- Result: skipped, already on the registry" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Result: published with provenance" >> "$GITHUB_STEP_SUMMARY"
+          fi
