@@ -9,3 +9,4 @@ dist/
 test-report.junit.xml
 docker/specs/
 tests/fixtures/malformed/
+.remember/
