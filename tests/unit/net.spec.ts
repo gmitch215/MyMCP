@@ -4,10 +4,140 @@ import {
 	ResponseTooLargeError,
 	assertSafeUrl,
 	readCapped,
+	readCappedText,
 	safeFetch
 } from '../../src/net';
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe('IPv6 and mapped addresses', () => {
+	it('allows a public IPv6 address', () => {
+		expect(() => assertSafeUrl('https://[2606:4700:4700::1111]/x')).not.toThrow();
+	});
+
+	it('blocks an IPv4-mapped private address', () => {
+		expect(() => assertSafeUrl('https://[::ffff:10.0.0.1]/x')).toThrow(NetworkPolicyError);
+	});
+
+	it('allows an IPv4-mapped public address', () => {
+		expect(() => assertSafeUrl('https://[::ffff:8.8.8.8]/x')).not.toThrow();
+	});
+
+	it('blocks an IPv4-compatible loopback address', () => {
+		expect(() => assertSafeUrl('https://[::127.0.0.1]/x')).toThrow(NetworkPolicyError);
+	});
+
+	it('blocks the unspecified and loopback IPv6 addresses', () => {
+		expect(() => assertSafeUrl('https://[::]/x')).toThrow(NetworkPolicyError);
+		expect(() => assertSafeUrl('https://[::1]/x')).toThrow(NetworkPolicyError);
+	});
+
+	it('blocks unique-local and link-local IPv6 addresses', () => {
+		expect(() => assertSafeUrl('https://[fd12::1]/x')).toThrow(NetworkPolicyError);
+		expect(() => assertSafeUrl('https://[fe80::1]/x')).toThrow(NetworkPolicyError);
+	});
+});
+
+describe('redirect handling', () => {
+	it('asks fetch not to follow redirects, so every hop passes the policy', async () => {
+		const seen: RequestInit[] = [];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (_url: string, init: RequestInit) => {
+				seen.push(init);
+				return new Response('ok');
+			})
+		);
+
+		await safeFetch('https://api.example.com/x');
+
+		expect(seen[0]?.redirect).toBe('manual');
+	});
+
+	it('refuses a redirect into a private address', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(
+				async () =>
+					new Response(null, {
+						status: 302,
+						headers: { location: 'https://169.254.169.254/latest/meta-data' }
+					})
+			)
+		);
+
+		await expect(safeFetch('https://api.example.com/x')).rejects.toThrow(NetworkPolicyError);
+	});
+
+	it('returns a redirect that has no Location header as-is', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => new Response(null, { status: 301 }))
+		);
+
+		const response = await safeFetch('https://api.example.com/x');
+
+		expect(response.status).toBe(301);
+	});
+
+	it('turns a POST answered with 302 into a GET, and drops credentials on a new origin', async () => {
+		const calls: { url: string; method: string; auth: string | null }[] = [];
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (input: string, init: RequestInit) => {
+				calls.push({
+					url: String(input),
+					method: String(init.method),
+					auth: new Headers(init.headers).get('authorization')
+				});
+				if (calls.length === 1) {
+					return new Response(null, {
+						status: 302,
+						headers: { location: 'https://b.example.com/y' }
+					});
+				}
+				return new Response('ok', { status: 200 });
+			})
+		);
+
+		const response = await safeFetch(
+			'https://a.example.com/x',
+			{ method: 'POST', body: 'payload', headers: { Authorization: 'Bearer t' } },
+			{}
+		);
+
+		expect(response.status).toBe(200);
+		expect(calls[1]).toEqual({ url: 'https://b.example.com/y', method: 'GET', auth: null });
+	});
+
+	it('stops a request when the caller aborts its signal', async () => {
+		const controller = new AbortController();
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(
+				(_url: string, init: RequestInit) =>
+					new Promise((_resolve, reject) => {
+						init.signal?.addEventListener('abort', () => reject(new Error('aborted by caller')));
+					})
+			)
+		);
+
+		const pending = safeFetch('https://api.example.com/x', {}, { signal: controller.signal });
+		controller.abort();
+
+		await expect(pending).rejects.toThrow('aborted by caller');
+	});
+});
+
+describe('readCapped edge cases', () => {
+	it('returns no bytes for a response without a body', async () => {
+		expect(await readCapped(new Response(null), 10)).toHaveLength(0);
+	});
+
+	it('reads a body as text within the limit', async () => {
+		expect(await readCappedText(new Response('hello'), 100)).toBe('hello');
+	});
+});
 
 describe('assertSafeUrl', () => {
 	it('accepts a public https URL', () => {

@@ -8,6 +8,86 @@ import {
 	serializeQueryParam
 } from '../../src/openapi/params';
 
+describe('serializer edge cases', () => {
+	it('keeps a null query value as an empty assignment and skips empty collections', () => {
+		expect(serializeQueryParam('a', null)).toEqual(['a=']);
+		expect(serializeQueryParam('ids', [])).toEqual([]);
+		expect(serializeQueryParam('filter', {})).toEqual([]);
+	});
+
+	it('bracket-indexes array items under deepObject', () => {
+		expect(serializeQueryParam('ids', ['1', '2'], { style: 'deepObject' })).toEqual([
+			'ids%5B0%5D=1',
+			'ids%5B1%5D=2'
+		]);
+	});
+
+	it('flattens an object to comma pairs under form style without explode', () => {
+		expect(serializeQueryParam('filter', { a: 'x', b: 'y' }, { explode: false })).toEqual([
+			'filter=a,x,b,y'
+		]);
+	});
+
+	it('keeps the space in a reserved-allowed query value', () => {
+		expect(serializeQueryParam('q', 'a b', { allowReserved: true })).toEqual(['q=a%20b']);
+	});
+
+	it('renders an empty label or matrix path parameter with its structural prefix', () => {
+		expect(serializePathParam('id', null, { style: 'label' })).toBe('.');
+		expect(serializePathParam('id', null, { style: 'matrix' })).toBe(';id=');
+		expect(serializePathParam('id', null, { style: 'simple' })).toBe('');
+	});
+
+	it('serializes an object under label and matrix styles, with and without explode', () => {
+		const obj = { a: '1', b: '2' };
+		expect(serializePathParam('id', obj, { style: 'label', explode: true })).toBe('.a=1.b=2');
+		expect(serializePathParam('id', obj, { style: 'label', explode: false })).toBe('.a,1,b,2');
+		expect(serializePathParam('id', obj, { style: 'matrix', explode: true })).toBe(';a=1;b=2');
+		expect(serializePathParam('id', obj, { style: 'matrix', explode: false })).toBe(';id=a,1,b,2');
+		expect(serializePathParam('id', obj, { explode: false })).toBe('a,1,b,2');
+	});
+
+	it('serializes an array under label and matrix styles', () => {
+		expect(serializePathParam('ids', ['a', 'b'], { style: 'label', explode: true })).toBe('.a.b');
+		expect(serializePathParam('ids', ['a', 'b'], { style: 'label', explode: false })).toBe('.a,b');
+		expect(serializePathParam('ids', ['a', 'b'], { style: 'matrix', explode: true })).toBe(
+			';ids=a;ids=b'
+		);
+		expect(serializePathParam('ids', ['a', 'b'], { style: 'matrix', explode: false })).toBe(
+			';ids=a,b'
+		);
+	});
+
+	it('prefixes a single value under label and matrix styles and encodes it', () => {
+		expect(serializePathParam('id', 'a b', { style: 'label' })).toBe('.a%20b');
+		expect(serializePathParam('id', 'a b', { style: 'matrix' })).toBe(';id=a%20b');
+	});
+
+	it('serializes header objects with and without explode', () => {
+		expect(serializeHeaderParam({ a: '1' }, { explode: true })).toBe('a=1');
+		expect(serializeHeaderParam({ a: '1', b: '2' })).toBe('a,1,b,2');
+		expect(serializeHeaderParam(['x', 'y'])).toBe('x,y');
+	});
+
+	it('picks the first enum value for a server variable with no default', () => {
+		const server = {
+			url: 'https://{region}.example.com',
+			variables: { region: { enum: ['us', 'eu'] } }
+		};
+		expect(resolveServerUrl(server)).toBe('https://us.example.com');
+	});
+
+	it('leaves a server variable visible when it has no default, enum or override', () => {
+		const server = { url: 'https://{region}.example.com', variables: { region: {} } };
+		expect(resolveServerUrl(server)).toBe('https://{region}.example.com');
+	});
+
+	it('joins a base and a path without a trailing slash, and keeps a matrix path intact', () => {
+		expect(joinUrl('https://a.example/', '')).toBe('https://a.example');
+		expect(joinUrl('https://a.example', ';x=1')).toBe('https://a.example;x=1');
+	});
+});
+
 describe('serializeQueryParam', () => {
 	it('explodes arrays under the default form style', () => {
 		expect(serializeQueryParam('id', [3, 4, 5])).toEqual(['id=3', 'id=4', 'id=5']);

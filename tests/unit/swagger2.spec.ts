@@ -69,6 +69,103 @@ const swagger2 = {
 	}
 };
 
+describe('convertSwagger2 edge cases', () => {
+	const base = { swagger: '2.0', info: { title: 'Edge', version: '1' }, paths: {} };
+
+	it('maps each OAuth2 flow to its OpenAPI 3 name', () => {
+		const doc = convertSwagger2({
+			...base,
+			securityDefinitions: {
+				app: { type: 'oauth2', flow: 'application', tokenUrl: 'https://t', scopes: {} },
+				code: {
+					type: 'oauth2',
+					flow: 'accessCode',
+					authorizationUrl: 'https://a',
+					tokenUrl: 'https://t',
+					scopes: {}
+				},
+				impl: { type: 'oauth2', flow: 'implicit', authorizationUrl: 'https://a', scopes: {} },
+				pass: { type: 'oauth2', flow: 'password', tokenUrl: 'https://t', scopes: {} }
+			}
+		} as never) as any;
+
+		const schemes = doc.components.securitySchemes;
+		expect(Object.keys(schemes.app.flows)).toEqual(['clientCredentials']);
+		expect(Object.keys(schemes.code.flows)).toEqual(['authorizationCode']);
+		expect(Object.keys(schemes.impl.flows)).toEqual(['implicit']);
+		expect(Object.keys(schemes.pass.flows)).toEqual(['password']);
+	});
+
+	it('maps a basic security definition to HTTP basic auth', () => {
+		const doc = convertSwagger2({
+			...base,
+			securityDefinitions: { b: { type: 'basic' } }
+		} as never) as any;
+
+		expect(doc.components.securitySchemes.b).toMatchObject({ type: 'http', scheme: 'basic' });
+	});
+
+	it('uses http when a description offers no https scheme', () => {
+		const doc = convertSwagger2({
+			...base,
+			host: 'plain.example',
+			schemes: ['http']
+		} as never) as any;
+
+		expect(doc.servers[0].url).toBe('http://plain.example');
+	});
+
+	it('defaults a body parameter to application/json when no consumes are declared', () => {
+		const doc = convertSwagger2({
+			...base,
+			paths: {
+				'/x': {
+					post: {
+						operationId: 'postX',
+						parameters: [{ name: 'body', in: 'body', schema: { type: 'object' } }],
+						responses: {}
+					}
+				}
+			}
+		} as never) as any;
+
+		expect(doc.paths['/x'].post.requestBody.content).toHaveProperty('application/json');
+	});
+
+	it('maps a file form field to a binary string under multipart', () => {
+		const doc = convertSwagger2({
+			...base,
+			consumes: ['multipart/form-data'],
+			paths: {
+				'/upload': {
+					post: {
+						operationId: 'upload',
+						parameters: [{ name: 'avatar', in: 'formData', type: 'file', required: true }],
+						responses: {}
+					}
+				}
+			}
+		} as never) as any;
+
+		const schema = doc.paths['/upload'].post.requestBody.content['multipart/form-data'].schema;
+		expect(schema.properties.avatar).toMatchObject({ type: 'string', format: 'binary' });
+		expect(schema.required).toEqual(['avatar']);
+	});
+
+	it('rewrites a parameter that is itself a reference', () => {
+		const doc = convertSwagger2({
+			...base,
+			paths: {
+				'/x': {
+					get: { operationId: 'getX', parameters: [{ $ref: '#/parameters/Page' }], responses: {} }
+				}
+			}
+		} as never) as any;
+
+		expect(doc.paths['/x'].get.parameters[0]).toEqual({ $ref: '#/components/parameters/Page' });
+	});
+});
+
 describe('convertSwagger2', () => {
 	const doc = convertSwagger2(swagger2);
 

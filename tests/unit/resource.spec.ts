@@ -169,13 +169,14 @@ describe('verifyJwt', () => {
 		expect(await verifyJwt('onlyonepart', { jwksUrl: JWKS_URL })).toBeNull();
 	});
 
-	it('rejects an unsupported algorithm, including none', async () => {
-		stubFetch({ [JWKS_URL]: { body: '{"keys":[]}' } });
+	it('rejects an unsupported algorithm, including none, before fetching any keys', async () => {
+		const stub = stubFetch({ [JWKS_URL]: { body: '{"keys":[]}' } });
 
 		const header = toBase64Url(new TextEncoder().encode(JSON.stringify({ alg: 'none' })));
 		const payload = toBase64Url(new TextEncoder().encode(JSON.stringify({ sub: 'x' })));
 
 		expect(await verifyJwt(`${header}.${payload}.`, { jwksUrl: JWKS_URL })).toBeNull();
+		expect(stub.requests.some((r) => r.url === JWKS_URL)).toBe(false);
 	});
 });
 

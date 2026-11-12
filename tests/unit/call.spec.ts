@@ -6,6 +6,113 @@ import { makeDoc, stubFetch } from '../helpers';
 
 const noCredentials = { headers: {}, query: {}, cookies: {}, missing: [] };
 
+describe('request and response edge cases', () => {
+	const getX = {
+		'/x': { get: { operationId: 'getX', responses: { '200': { description: 'ok' } } } },
+		'/search': {
+			get: {
+				operationId: 'search',
+				parameters: [{ name: 'q', in: 'query', schema: { type: 'string' } }],
+				responses: {}
+			}
+		}
+	};
+
+	it('encodes a query value so an ampersand cannot add a parameter', () => {
+		const prepared = prepareRequest(
+			toolFor(getX, 'search'),
+			{ q: 'a&admin=1' },
+			'https://api.example.com',
+			noCredentials
+		);
+
+		expect(prepared.url).toContain('q=a%26admin%3D1');
+		expect(prepared.url).not.toContain('&admin=1');
+	});
+
+	it('encodes an API key sent as a query parameter', () => {
+		const prepared = prepareRequest(toolFor(getX, 'getX'), {}, 'https://api.example.com', {
+			headers: {},
+			query: { api_key: 'a&b=c' },
+			cookies: {},
+			missing: []
+		});
+
+		expect(prepared.url).toContain('api_key=a%26b%3Dc');
+	});
+
+	it('reports a timeout when the request is aborted', async () => {
+		stubFetch({
+			'https://api.example.com/x': {
+				error: Object.assign(new Error('aborted'), { name: 'AbortError' })
+			}
+		});
+
+		const outcome = await executeCall(
+			toolFor(getX, 'getX'),
+			{},
+			'https://api.example.com',
+			noCredentials
+		);
+
+		expect(outcome.result.isError).toBe(true);
+		expect(JSON.stringify(outcome.result)).toContain('did not respond within the timeout');
+	});
+
+	it('returns audio as an audio content block', async () => {
+		stubFetch({
+			'https://api.example.com/x': { body: 'AAAA', headers: { 'Content-Type': 'audio/mpeg' } }
+		});
+
+		const outcome = await executeCall(
+			toolFor(getX, 'getX'),
+			{},
+			'https://api.example.com',
+			noCredentials
+		);
+
+		expect((outcome.result.content[0] as { type: string }).type).toBe('audio');
+	});
+
+	it('truncates a text body that exceeds the text cap', async () => {
+		stubFetch({
+			'https://api.example.com/x': {
+				body: 'x'.repeat(512 * 1024 + 100),
+				headers: { 'Content-Type': 'text/plain' }
+			}
+		});
+
+		const outcome = await executeCall(
+			toolFor(getX, 'getX'),
+			{},
+			'https://api.example.com',
+			noCredentials
+		);
+		const text = (outcome.result.content[0] as { text: string }).text;
+
+		expect(text.endsWith('... (truncated)')).toBe(true);
+	});
+
+	it('returns a JSON-labelled body that does not parse as plain text', async () => {
+		stubFetch({
+			'https://api.example.com/x': {
+				body: '{not json',
+				headers: { 'Content-Type': 'application/json' }
+			}
+		});
+
+		const outcome = await executeCall(
+			toolFor(getX, 'getX'),
+			{},
+			'https://api.example.com',
+			noCredentials
+		);
+
+		expect(outcome.result.structuredContent).toBeUndefined();
+		expect((outcome.result.content[0] as { text: string }).text).toBe('{not json');
+	});
+});
+
 function toolFor(paths: Record<string, unknown>, name: string): ToolDefinition {
 	const table = buildToolTable(makeDoc({ paths: paths as never }));
 	const tool = table.byName.get(name);

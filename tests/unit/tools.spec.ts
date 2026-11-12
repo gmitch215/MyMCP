@@ -2,6 +2,104 @@ import { describe, expect, it } from 'vitest';
 import { buildToolTable, preferredContentType, sanitizeToolName } from '../../src/openapi/tools';
 import { makeDoc } from '../helpers';
 
+describe('reference and description edge cases', () => {
+	it('follows one more reference hop when a component is itself a reference', () => {
+		const table = buildToolTable(
+			makeDoc({
+				components: {
+					responses: {
+						Alias: { $ref: '#/components/responses/Base' },
+						Base: {
+							description: 'ok',
+							content: {
+								'application/json': {
+									schema: { type: 'object', properties: { id: { type: 'string' } } }
+								}
+							}
+						}
+					}
+				},
+				paths: {
+					'/x': {
+						get: {
+							operationId: 'getX',
+							responses: { '200': { $ref: '#/components/responses/Alias' } }
+						}
+					}
+				}
+			} as never)
+		);
+
+		expect(table.byName.get('getX')?.outputSchema).toMatchObject({
+			properties: { id: { type: 'string' } }
+		});
+	});
+
+	it('reads a parameter schema from its content entry when no schema is given', () => {
+		const table = buildToolTable(
+			makeDoc({
+				paths: {
+					'/x': {
+						get: {
+							operationId: 'getX',
+							parameters: [
+								{
+									name: 'limit',
+									in: 'query',
+									content: { 'application/json': { schema: { type: 'integer' } } }
+								}
+							],
+							responses: {}
+						}
+					}
+				}
+			} as never)
+		);
+
+		expect(table.byName.get('getX')?.inputSchema.properties?.limit).toMatchObject({
+			type: 'integer'
+		});
+	});
+
+	it('joins a summary and a description that does not repeat it', () => {
+		const table = buildToolTable(
+			makeDoc({
+				paths: {
+					'/x': {
+						get: {
+							operationId: 'getX',
+							summary: 'Fetch',
+							description: 'Returns all items',
+							responses: {}
+						}
+					}
+				}
+			} as never)
+		);
+
+		expect(table.byName.get('getX')?.description).toBe('Fetch\n\nReturns all items');
+	});
+
+	it('uses the description alone when it already starts with the summary', () => {
+		const table = buildToolTable(
+			makeDoc({
+				paths: {
+					'/x': {
+						get: {
+							operationId: 'getX',
+							summary: 'Lists',
+							description: 'Lists all items',
+							responses: {}
+						}
+					}
+				}
+			} as never)
+		);
+
+		expect(table.byName.get('getX')?.description).toBe('Lists all items');
+	});
+});
+
 describe('sanitizeToolName', () => {
 	it('replaces characters MCP clients reject', () => {
 		expect(sanitizeToolName('meta/root')).toBe('meta_root');

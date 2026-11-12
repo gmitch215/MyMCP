@@ -202,6 +202,87 @@ describe('async upstream jobs', () => {
 	});
 });
 
+describe('poll edge cases', () => {
+	const JOB = 'https://api.async.example/jobs/2';
+
+	it('fails the task when the upstream request itself throws', async () => {
+		stubFetch({ [JOB]: { error: new Error('connection reset') } });
+
+		const task = await createTask(kvEnv, { upstreamPoll: { url: JOB, headers: {} } });
+		const advanced = await pollUpstreamJob(kvEnv, task);
+
+		expect(advanced.status).toBe('failed');
+		expect(advanced.error?.message).toContain('connection reset');
+	});
+
+	it('returns a plain-text body as the result without structured content', async () => {
+		stubFetch({ [JOB]: { body: 'all done', headers: { 'Content-Type': 'text/plain' } } });
+
+		const task = await createTask(kvEnv, { upstreamPoll: { url: JOB, headers: {} } });
+		const advanced = await pollUpstreamJob(kvEnv, task);
+
+		expect(advanced.status).toBe('completed');
+		expect(advanced.result?.structuredContent).toBeUndefined();
+		expect((advanced.result?.content as { text: string }[])[0]?.text).toBe('all done');
+	});
+
+	it('keeps a JSON-labelled body that does not parse as plain text', async () => {
+		stubFetch({ [JOB]: { body: '{nope', headers: { 'Content-Type': 'application/json' } } });
+
+		const task = await createTask(kvEnv, { upstreamPoll: { url: JOB, headers: {} } });
+		const advanced = await pollUpstreamJob(kvEnv, task);
+
+		expect(advanced.status).toBe('completed');
+		expect(advanced.result?.structuredContent).toBeUndefined();
+	});
+
+	it('keeps the current poll interval when Retry-After is not a number', async () => {
+		stubFetch({ [JOB]: { status: 202, headers: { 'Retry-After': 'later' } } });
+
+		const task = await createTask(kvEnv, {
+			pollIntervalMs: 2500,
+			upstreamPoll: { url: JOB, headers: {} }
+		});
+		const advanced = await pollUpstreamJob(kvEnv, task);
+
+		expect(advanced.status).toBe('working');
+		expect(advanced.pollIntervalMs).toBe(2500);
+	});
+});
+
+describe('transport task edge cases', () => {
+	it('rejects tasks/update and tasks/cancel when KV is absent', async () => {
+		stubFetch({ [SPEC_URL]: { body: SPEC } });
+
+		for (const method of ['tasks/update', 'tasks/cancel']) {
+			const response = await worker.fetch(rpcWithTasks(method, { taskId: 'x' }), {}, ctx);
+			expect(response.status).toBe(404);
+		}
+	});
+
+	it('answers a pending input request and moves the task back to working', async () => {
+		stubFetch({ [SPEC_URL]: { body: SPEC } });
+		const task = await createTask(kvEnv, {
+			status: 'input_required',
+			inputRequests: { ask: {} } as never
+		});
+
+		const response = await worker.fetch(
+			rpcWithTasks('tasks/update', {
+				taskId: task.taskId,
+				inputResponses: { ask: { value: 'yes' } }
+			}),
+			kvEnv,
+			ctx
+		);
+		const loaded = await getTask(kvEnv, task.taskId);
+
+		expect(response.status).toBe(200);
+		expect(loaded?.status).toBe('working');
+		expect(loaded?.inputRequests).toBeUndefined();
+	});
+});
+
 describe('pollUpstreamJob', () => {
 	it('completes the task when the job finishes', async () => {
 		stubFetch({ 'https://api.async.example/jobs/1': { body: '{"rows":3}' } });

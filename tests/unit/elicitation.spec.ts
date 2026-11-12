@@ -183,6 +183,27 @@ describe('missing argument elicitation', () => {
 	});
 });
 
+describe('write confirmation covers POST', () => {
+	const WRITE_SPEC_URL = 'https://api.writes.example/openapi.json';
+	const WRITE_SPEC = JSON.stringify({
+		openapi: '3.1.0',
+		info: { title: 'Writes', version: '1.0.0' },
+		servers: [{ url: 'https://api.writes.example/v1' }],
+		paths: { '/pets': { post: { operationId: 'createPet', responses: {} } } }
+	});
+
+	it('asks before a POST under confirm=write', async () => {
+		stubFetch({ [WRITE_SPEC_URL]: { body: WRITE_SPEC } });
+		const url = `https://mymcp.test/${encodeURIComponent(WRITE_SPEC_URL)}/mcp?confirm=write`;
+
+		const body = (await (
+			await callTool('createPet', { arguments: {} }, { elicitation: { form: {} } }, url)
+		).json()) as any;
+
+		expect(body.result.resultType).toBe('input_required');
+	});
+});
+
 describe('write confirmation', () => {
 	const confirmUrl = `${BASE}?confirm=write`;
 
