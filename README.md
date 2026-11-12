@@ -342,6 +342,68 @@ the `oauth2` scheme its description declares. MyMCP stores the resulting token a
 user and uses it on their behalf, so upstream credentials never reach the MCP client. The callback
 checks that the browser user is the same principal that began the flow.
 
+## Library
+
+The npm package exports the handler the hosted service runs. Use it to serve MCP endpoints from a
+Worker you already have.
+
+```bash
+npm install @gmitch215/mymcp
+```
+
+A Worker that is only MyMCP:
+
+```ts
+import mymcp from '@gmitch215/mymcp';
+
+export default mymcp;
+```
+
+A Worker that serves other routes too. Requests for the MCP host go to MyMCP; everything else goes
+to the application:
+
+```ts
+import mymcp, { type Env } from '@gmitch215/mymcp';
+
+export default {
+	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+		const url = new URL(request.url);
+		if (url.hostname === 'mcp.example.com') return mymcp.fetch(request, env, ctx);
+
+		// the application's own routes go here
+		return new Response('Not found', { status: 404 });
+	}
+} satisfies ExportedHandler<Env>;
+```
+
+The handler reads the same bindings and variables listed under [Self-Hosting](#self-hosting). The
+types need `@cloudflare/workers-types`, a peer dependency.
+
+The description can be any public URL the Worker can reach, including one the same application
+serves. Point it at the description through the path, as in the examples above:
+
+```text
+https://mcp.example.com/https%3A%2F%2Fapi.example.com%2Fapi%2Fopenapi.json/mcp
+```
+
+### Deprecated SSE Transport
+
+The HTTP+SSE transport needs the `MCP_SSE` Durable Object. Export the class from the entry module and
+bind it:
+
+```ts
+export { McpSseSession } from '@gmitch215/mymcp';
+```
+
+```json
+{
+	"durable_objects": {
+		"bindings": [{ "name": "MCP_SSE", "class_name": "McpSseSession" }]
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["McpSseSession"] }]
+}
+```
+
 ## Self-Hosting
 
 ```bash
