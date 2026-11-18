@@ -7,7 +7,7 @@ services:
       - '127.0.0.1:18081:8080'
 
   specs:
-    image: nginx:1.31-alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
+    image: nginx:1.31-alpine@sha256:0563c36f94a6d3ec3584161b77859f740f7e20b4853f52c796a864ce6908e8ea
     ports:
       - '127.0.0.1:18082:80'
     volumes:
